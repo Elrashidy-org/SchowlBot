@@ -38,6 +38,7 @@ export interface ClientLead {
   course_interest: string | null;
   quiz_recommendation: string | null;
   referrer: string | null;
+  source: string | null;
   notes: string | null;
   created_at: string;
   next_follow_up_at: string | null;

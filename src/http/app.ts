@@ -9,6 +9,7 @@ import { notifyLeadCreated } from "../bot/discordService.js";
 import { AppError, ValidationError } from "../utils/errors.js";
 import { createLead } from "../services/leadService.js";
 import { mapLegacyLeadPayload } from "../services/leadSchemas.js";
+import { isMeetConfigured } from "../services/meetService.js";
 
 export function createHttpApp() {
   const app = express();
@@ -44,6 +45,7 @@ export function createHttpApp() {
         discord_configured: Boolean(config.discordToken),
         resend_configured: Boolean(config.resendApiKey),
         turnstile_configured: Boolean(config.turnstileSecretKey),
+        google_meet_configured: isMeetConfigured(),
       });
     } catch (error) {
       next(error);

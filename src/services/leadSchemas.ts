@@ -22,6 +22,7 @@ export const leadPayloadSchema = z.object({
     errorMap: () => ({ message: "Privacy policy acceptance is required" }),
   }),
   turnstile_token: z.string().optional(),
+  source: z.string().optional().default("website"),
   email: z.string().email().optional().or(z.literal("")),
   course_interest: z.string().optional(),
   quiz_answers: z.record(z.unknown()).optional().default({}),
@@ -50,10 +51,36 @@ export const legacyLeadPayloadSchema = z.object({
   interests: z.array(z.string()).optional(),
 });
 
+// Minimal name -> ISO map for the legacy form. Defaults to Egypt (the primary
+// market) when a country isn't recognised.
+const COUNTRY_ISO: Record<string, string> = {
+  egypt: "EG",
+  "saudi arabia": "SA",
+  ksa: "SA",
+  "united arab emirates": "AE",
+  uae: "AE",
+  kuwait: "KW",
+  qatar: "QA",
+  bahrain: "BH",
+  oman: "OM",
+  jordan: "JO",
+  lebanon: "LB",
+  "united states": "US",
+  usa: "US",
+  "united kingdom": "GB",
+  uk: "GB",
+  canada: "CA",
+};
+
+function countryToIso(name?: string) {
+  if (!name) return "EG";
+  return COUNTRY_ISO[name.trim().toLowerCase()] || "EG";
+}
+
 export function mapLegacyLeadPayload(input: unknown): LeadPayload {
   const legacy = legacyLeadPayloadSchema.parse(input);
   const countryName = legacy.country || "Egypt";
-  const countryIso = countryName.toLowerCase() === "egypt" ? "EG" : "EG";
+  const countryIso = countryToIso(countryName);
 
   return {
     lead_type: "free_trial",
@@ -74,5 +101,6 @@ export function mapLegacyLeadPayload(input: unknown): LeadPayload {
     quiz_answers: {},
     quiz_recommendation: undefined,
     referrer: undefined,
+    source: "website",
   };
 }

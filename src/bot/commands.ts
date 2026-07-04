@@ -5,6 +5,30 @@ import {
 
 export const slashCommands = [
   new SlashCommandBuilder()
+    .setName("help")
+    .setDescription("List the commands you can use"),
+
+  new SlashCommandBuilder()
+    .setName("whoami")
+    .setDescription("Show your SchowlBot roles and profile"),
+
+  new SlashCommandBuilder()
+    .setName("stats")
+    .setDescription("Show a quick overview of leads and trials"),
+
+  new SlashCommandBuilder()
+    .setName("funnel")
+    .setDescription("Show the lead conversion funnel"),
+
+  new SlashCommandBuilder()
+    .setName("digest")
+    .setDescription("Show today's activity digest"),
+
+  new SlashCommandBuilder()
+    .setName("summary")
+    .setDescription("Weekly business summary with teacher fill rate"),
+
+  new SlashCommandBuilder()
     .setName("init")
     .setDescription("Initialize your SchowlBot profile")
     .addSubcommand((sub) =>
@@ -14,6 +38,25 @@ export const slashCommands = [
   new SlashCommandBuilder()
     .setName("lead")
     .setDescription("Manage leads")
+    .addSubcommand((sub) =>
+      sub
+        .setName("new")
+        .setDescription("Manually add a new lead (opens a form)")
+        .addStringOption((opt) =>
+          opt
+            .setName("source")
+            .setDescription("Where the lead came from")
+            .setRequired(false)
+            .addChoices(
+              { name: "manual", value: "manual" },
+              { name: "whatsapp", value: "whatsapp" },
+              { name: "phone", value: "phone" },
+              { name: "ad", value: "ad" },
+              { name: "referral", value: "referral" },
+              { name: "other", value: "other" },
+            ),
+        ),
+    )
     .addSubcommand((sub) =>
       sub
         .setName("view")
@@ -28,6 +71,9 @@ export const slashCommands = [
         .setDescription("Search leads")
         .addStringOption((opt) =>
           opt.setName("query").setDescription("Name or phone").setRequired(true),
+        )
+        .addIntegerOption((opt) =>
+          opt.setName("page").setDescription("Page number").setMinValue(1).setRequired(false),
         ),
     )
     .addSubcommand((sub) =>
@@ -64,7 +110,55 @@ export const slashCommands = [
         ),
     )
     .addSubcommand((sub) =>
-      sub.setName("due").setDescription("Show due follow-ups"),
+      sub
+        .setName("due")
+        .setDescription("Show due follow-ups")
+        .addIntegerOption((opt) =>
+          opt.setName("page").setDescription("Page number").setMinValue(1).setRequired(false),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("assign")
+        .setDescription("Assign a lead to a sales user")
+        .addStringOption((opt) =>
+          opt.setName("lead_id").setDescription("Lead ID").setRequired(true),
+        )
+        .addUserOption((opt) =>
+          opt.setName("user").setDescription("Sales user").setRequired(true),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("mine")
+        .setDescription("Show leads assigned to you")
+        .addIntegerOption((opt) =>
+          opt.setName("page").setDescription("Page number").setMinValue(1).setRequired(false),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("history")
+        .setDescription("Show a lead's activity history")
+        .addStringOption((opt) =>
+          opt.setName("lead_id").setDescription("Lead ID").setRequired(true),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("export")
+        .setDescription("Export recent leads as CSV")
+        .addIntegerOption((opt) =>
+          opt.setName("days").setDescription("How many days back (default 30)").setMinValue(1).setMaxValue(365).setRequired(false),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("forget")
+        .setDescription("Anonymize a lead's personal data (GDPR)")
+        .addStringOption((opt) =>
+          opt.setName("lead_id").setDescription("Lead ID").setRequired(true),
+        ),
     ),
 
   new SlashCommandBuilder()
@@ -115,6 +209,23 @@ export const slashCommands = [
     )
     .addSubcommand((sub) =>
       sub.setName("load").setDescription("Show teacher load"),
+    )
+    .addSubcommand((sub) =>
+      sub.setName("mine").setDescription("View the courses you are assigned to teach"),
+    )
+    .addSubcommand((sub) =>
+      sub.setName("pending").setDescription("List pending teacher applications"),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("payroll")
+        .setDescription("Export completed-lesson counts per teacher (CSV)")
+        .addIntegerOption((opt) =>
+          opt.setName("month").setDescription("Month 1-12 (default: this month)").setMinValue(1).setMaxValue(12).setRequired(false),
+        )
+        .addIntegerOption((opt) =>
+          opt.setName("year").setDescription("Year (default: this year)").setMinValue(2024).setRequired(false),
+        ),
     )
     .addSubcommandGroup((group) =>
       group
@@ -254,6 +365,23 @@ export const slashCommands = [
     )
     .addSubcommand((sub) =>
       sub
+        .setName("reschedule")
+        .setDescription("Reschedule a trial")
+        .addIntegerOption((opt) =>
+          opt.setName("lesson_id").setDescription("Lesson ID").setRequired(true),
+        )
+        .addStringOption((opt) =>
+          opt.setName("starts_at").setDescription("New ISO date/time").setRequired(true),
+        )
+        .addStringOption((opt) =>
+          opt.setName("teacher").setDescription("Optional new teacher mention or ID").setRequired(false),
+        )
+        .addStringOption((opt) =>
+          opt.setName("meeting_url").setDescription("New meeting link").setRequired(false),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
         .setName("done")
         .setDescription("Mark trial as done")
         .addIntegerOption((opt) =>
@@ -278,8 +406,175 @@ export const slashCommands = [
     ),
 
   new SlashCommandBuilder()
+    .setName("lesson")
+    .setDescription("Manage recurring paid lessons")
+    .addSubcommand((sub) =>
+      sub
+        .setName("schedule")
+        .setDescription("Schedule a weekly recurring lesson series")
+        .addStringOption((opt) =>
+          opt.setName("lead_id").setDescription("Lead ID").setRequired(true),
+        )
+        .addStringOption((opt) =>
+          opt.setName("course").setDescription("Course name or ID").setRequired(true),
+        )
+        .addStringOption((opt) =>
+          opt.setName("teacher").setDescription("Teacher mention or ID").setRequired(true),
+        )
+        .addStringOption((opt) =>
+          opt.setName("starts_at").setDescription("First lesson ISO date/time").setRequired(true),
+        )
+        .addIntegerOption((opt) =>
+          opt
+            .setName("weeks")
+            .setDescription("Number of weekly lessons (1-26)")
+            .setMinValue(1)
+            .setMaxValue(26)
+            .setRequired(true),
+        )
+        .addStringOption((opt) =>
+          opt.setName("meeting_url").setDescription("Meeting link").setRequired(false),
+        )
+        .addIntegerOption((opt) =>
+          opt.setName("duration").setDescription("Minutes (default 60)").setRequired(false),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("list")
+        .setDescription("List a lead's lessons")
+        .addStringOption((opt) =>
+          opt.setName("lead_id").setDescription("Lead ID").setRequired(true),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("cancel")
+        .setDescription("Cancel a single lesson")
+        .addIntegerOption((opt) =>
+          opt.setName("lesson_id").setDescription("Lesson ID").setRequired(true),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("complete")
+        .setDescription("Mark your session attended (recording + student rating)")
+        .addIntegerOption((opt) => opt.setName("lesson_id").setDescription("Lesson ID").setRequired(true))
+        .addStringOption((opt) => opt.setName("recording").setDescription("Recording video URL").setRequired(true))
+        .addIntegerOption((opt) =>
+          opt.setName("rating").setDescription("Student rating 1-5").setMinValue(1).setMaxValue(5).setRequired(true),
+        )
+        .addStringOption((opt) => opt.setName("notes").setDescription("Session notes (optional)").setRequired(false)),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("noshow")
+        .setDescription("Mark your session as a no-show")
+        .addIntegerOption((opt) => opt.setName("lesson_id").setDescription("Lesson ID").setRequired(true)),
+    ),
+
+  new SlashCommandBuilder()
+    .setName("student")
+    .setDescription("Manage enrolled students and memberships")
+    .addSubcommand((sub) =>
+      sub
+        .setName("enroll")
+        .setDescription("Enroll a student and open a membership")
+        .addStringOption((opt) => opt.setName("course").setDescription("Course name or ID").setRequired(true))
+        .addStringOption((opt) => opt.setName("renews_on").setDescription("Renewal date YYYY-MM-DD").setRequired(true))
+        .addStringOption((opt) => opt.setName("lead_id").setDescription("Lead to enroll from").setRequired(false))
+        .addStringOption((opt) => opt.setName("name").setDescription("Student name (if no lead)").setRequired(false))
+        .addStringOption((opt) => opt.setName("track").setDescription("Track within the course").setRequired(false))
+        .addStringOption((opt) => opt.setName("level").setDescription("Current level").setRequired(false))
+        .addStringOption((opt) => opt.setName("teacher").setDescription("Assigned teacher mention or ID").setRequired(false))
+        .addStringOption((opt) => opt.setName("plan").setDescription("Plan (e.g. monthly)").setRequired(false))
+        .addNumberOption((opt) => opt.setName("price").setDescription("Price").setRequired(false)),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("view")
+        .setDescription("View a student and their membership")
+        .addStringOption((opt) => opt.setName("student").setDescription("Name or student ID").setRequired(true)),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("list")
+        .setDescription("List active students")
+        .addIntegerOption((opt) => opt.setName("page").setDescription("Page number").setMinValue(1).setRequired(false)),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("level")
+        .setDescription("Update a student's current level")
+        .addStringOption((opt) => opt.setName("student").setDescription("Name or student ID").setRequired(true))
+        .addStringOption((opt) => opt.setName("level").setDescription("New level").setRequired(true)),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("renew")
+        .setDescription("Renew a student's membership")
+        .addStringOption((opt) => opt.setName("student").setDescription("Name or student ID").setRequired(true))
+        .addIntegerOption((opt) => opt.setName("months").setDescription("Months to extend (default 1)").setMinValue(1).setMaxValue(24).setRequired(false)),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("cancel")
+        .setDescription("Cancel a student's membership")
+        .addStringOption((opt) => opt.setName("student").setDescription("Name or student ID").setRequired(true)),
+    )
+    .addSubcommand((sub) =>
+      sub.setName("renewals").setDescription("Show upcoming membership renewals"),
+    ),
+
+  new SlashCommandBuilder()
+    .setName("referral")
+    .setDescription("Track referrals and bonuses")
+    .addSubcommand((sub) =>
+      sub
+        .setName("add")
+        .setDescription("Record a referral")
+        .addStringOption((opt) => opt.setName("lead_id").setDescription("Referred lead ID").setRequired(true))
+        .addStringOption((opt) => opt.setName("referrer").setDescription("Referrer name").setRequired(true))
+        .addStringOption((opt) => opt.setName("phone").setDescription("Referrer phone").setRequired(false))
+        .addStringOption((opt) => opt.setName("reward").setDescription("Reward (e.g. 1 month free)").setRequired(false)),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("list")
+        .setDescription("List referrals")
+        .addStringOption((opt) =>
+          opt
+            .setName("status")
+            .setDescription("Filter by status")
+            .setRequired(false)
+            .addChoices(
+              { name: "pending", value: "pending" },
+              { name: "qualified", value: "qualified" },
+              { name: "rewarded", value: "rewarded" },
+            ),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("reward")
+        .setDescription("Mark a referral as rewarded")
+        .addStringOption((opt) => opt.setName("id").setDescription("Referral ID").setRequired(true)),
+    ),
+
+  new SlashCommandBuilder()
     .setName("schedule")
     .setDescription("Schedule tools")
+    .addSubcommand((sub) =>
+      sub.setName("mine").setDescription("Show your upcoming lessons as a week agenda"),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("teacher")
+        .setDescription("Show a teacher's upcoming lessons as a week agenda")
+        .addStringOption((opt) =>
+          opt.setName("teacher").setDescription("Mention or teacher ID").setRequired(true),
+        ),
+    )
     .addSubcommand((sub) =>
       sub.setName("conflicts").setDescription("Find schedule conflicts"),
     ),
@@ -291,6 +586,25 @@ export const slashCommands = [
       sub
         .setName("request")
         .setDescription("Request material for a course lesson")
+        .addStringOption((opt) =>
+          opt.setName("course").setDescription("Course name or ID").setRequired(true),
+        )
+        .addIntegerOption((opt) =>
+          opt.setName("lesson").setDescription("Lesson number").setRequired(true),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("list")
+        .setDescription("List material for a course")
+        .addStringOption((opt) =>
+          opt.setName("course").setDescription("Course name or ID").setRequired(true),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("remove")
+        .setDescription("Remove material for a course lesson")
         .addStringOption((opt) =>
           opt.setName("course").setDescription("Course name or ID").setRequired(true),
         )
@@ -322,5 +636,124 @@ export const slashCommands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addSubcommand((sub) =>
       sub.setName("health").setDescription("Check service health"),
+    ),
+
+  new SlashCommandBuilder()
+    .setName("config")
+    .setDescription("Configure SchowlBot for this server")
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .addSubcommandGroup((group) =>
+      group
+        .setName("channel")
+        .setDescription("Assign channels to SchowlBot purposes")
+        .addSubcommand((sub) =>
+          sub
+            .setName("info")
+            .setDescription("Show details and purpose of a channel")
+            .addChannelOption((opt) =>
+              opt
+                .setName("channel")
+                .setDescription("Channel to inspect (defaults to current)")
+                .setRequired(false),
+            ),
+        )
+        .addSubcommand((sub) =>
+          sub
+            .setName("set")
+            .setDescription("Assign a channel to a purpose")
+            .addStringOption((opt) =>
+              opt
+                .setName("purpose")
+                .setDescription("What this channel is used for")
+                .setRequired(true)
+                .addChoices(
+                  { name: "leads (new website leads)", value: "leads" },
+                  { name: "teacher applications", value: "teacher_applications" },
+                  { name: "trial alerts", value: "trial_alerts" },
+                  { name: "system alerts", value: "system_alerts" },
+                  { name: "daily digest", value: "daily_digest" },
+                ),
+            )
+            .addChannelOption((opt) =>
+              opt
+                .setName("channel")
+                .setDescription("Channel to assign (defaults to current)")
+                .setRequired(false),
+            ),
+        )
+        .addSubcommand((sub) =>
+          sub.setName("list").setDescription("List all configured channels"),
+        )
+        .addSubcommand((sub) =>
+          sub
+            .setName("unset")
+            .setDescription("Clear the channel assigned to a purpose")
+            .addStringOption((opt) =>
+              opt
+                .setName("purpose")
+                .setDescription("Purpose to clear")
+                .setRequired(true)
+                .addChoices(
+                  { name: "leads", value: "leads" },
+                  { name: "teacher applications", value: "teacher_applications" },
+                  { name: "trial alerts", value: "trial_alerts" },
+                  { name: "system alerts", value: "system_alerts" },
+                  { name: "daily digest", value: "daily_digest" },
+                ),
+            ),
+        ),
+    )
+    .addSubcommandGroup((group) =>
+      group
+        .setName("role")
+        .setDescription("Manage staff access roles")
+        .addSubcommand((sub) =>
+          sub
+            .setName("grant")
+            .setDescription("Grant a role to a user")
+            .addUserOption((opt) =>
+              opt.setName("user").setDescription("Discord user").setRequired(true),
+            )
+            .addStringOption((opt) =>
+              opt
+                .setName("role")
+                .setDescription("Role to grant")
+                .setRequired(true)
+                .addChoices(
+                  { name: "admin", value: "admin" },
+                  { name: "team_lead", value: "team_lead" },
+                  { name: "sales", value: "sales" },
+                  { name: "teacher", value: "teacher" },
+                ),
+            ),
+        )
+        .addSubcommand((sub) =>
+          sub
+            .setName("revoke")
+            .setDescription("Revoke a role from a user")
+            .addUserOption((opt) =>
+              opt.setName("user").setDescription("Discord user").setRequired(true),
+            )
+            .addStringOption((opt) =>
+              opt
+                .setName("role")
+                .setDescription("Role to revoke")
+                .setRequired(true)
+                .addChoices(
+                  { name: "admin", value: "admin" },
+                  { name: "team_lead", value: "team_lead" },
+                  { name: "sales", value: "sales" },
+                  { name: "teacher", value: "teacher" },
+                ),
+            ),
+        )
+        .addSubcommand((sub) =>
+          sub
+            .setName("list")
+            .setDescription("List a user's roles")
+            .addUserOption((opt) =>
+              opt.setName("user").setDescription("Discord user").setRequired(true),
+            ),
+        ),
     ),
 ].map((command) => command.toJSON());

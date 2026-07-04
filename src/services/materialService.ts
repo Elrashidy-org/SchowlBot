@@ -26,6 +26,30 @@ export async function requestMaterial(input: {
   return material;
 }
 
+export async function listCourseMaterials(courseId: string) {
+  const { data, error } = await supabase
+    .from("course_material")
+    .select("lesson_number, title_en, resource_url, attachment_url")
+    .eq("course_id", courseId)
+    .eq("active", true)
+    .order("lesson_number", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function removeMaterial(courseId: string, lessonNumber: number) {
+  const { data, error } = await supabase
+    .from("course_material")
+    .update({ active: false, updated_at: new Date().toISOString() })
+    .eq("course_id", courseId)
+    .eq("lesson_number", lessonNumber)
+    .eq("active", true)
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
 export async function addMaterial(input: {
   courseId: string;
   lessonNumber: number;

@@ -37,7 +37,17 @@ export const config = {
   turnstileSecretKey: optional("TURNSTILE_SECRET_KEY"),
   resendApiKey: optional("RESEND_API_KEY"),
   resendFromEmail: optional("RESEND_FROM_EMAIL", "Schowl <noreply@schowl.com>"),
+  emailLogoUrl: optional("EMAIL_LOGO_URL", "https://www.schowl.com/brand/logo-dark.png"),
+  // Per-course link pattern, e.g. "https://www.schowl.com/courses/{slug}".
+  // Leave blank until the site has per-course pages; a single CTA is used meanwhile.
+  emailCourseUrlTemplate: optional("EMAIL_COURSE_URL_TEMPLATE"),
   adminNotifyEmail: optional("ADMIN_NOTIFY_EMAIL"),
+  leadSlaHours: Number(optional("LEAD_SLA_HOURS", "2")),
+  autoAssignLeads: optional("AUTO_ASSIGN_LEADS", "true") !== "false",
+  googleClientId: optional("GOOGLE_CLIENT_ID"),
+  googleClientSecret: optional("GOOGLE_CLIENT_SECRET"),
+  googleRefreshToken: optional("GOOGLE_REFRESH_TOKEN"),
+  googleCalendarId: optional("GOOGLE_CALENDAR_ID", "primary"),
 };
 
 export function isProduction() {

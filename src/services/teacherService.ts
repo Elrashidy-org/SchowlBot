@@ -67,7 +67,7 @@ export async function getTeacherByMentionOrId(value: string) {
 export async function approveTeacher(discordUserId: string, reviewer: BotUser | null) {
   const { data: onboarding, error } = await supabase
     .from("teacher_onboarding")
-    .select("*, bot_user(*)")
+    .select("*")
     .eq("discord_user_id", discordUserId)
     .single();
   if (error) throw error;
@@ -190,6 +190,65 @@ export async function setTeacherResponsibility(input: {
     .single();
   if (error) throw error;
   return data;
+}
+
+// Completed-lesson counts per teacher for a given month (for payroll).
+export async function getTeacherPayroll(year: number, month: number) {
+  const start = new Date(Date.UTC(year, month - 1, 1));
+  const end = new Date(Date.UTC(year, month, 1));
+  const { data: lessons, error } = await supabase
+    .from("lesson")
+    .select("teacher_id, lesson_type")
+    .eq("status", "completed")
+    .gte("scheduled_at", start.toISOString())
+    .lt("scheduled_at", end.toISOString());
+  if (error) throw error;
+
+  const counts = new Map<string, { trial: number; paid: number }>();
+  for (const l of lessons || []) {
+    const tid = l.teacher_id as string | null;
+    if (!tid) continue;
+    const c = counts.get(tid) || { trial: 0, paid: 0 };
+    if (l.lesson_type === "paid") c.paid += 1;
+    else c.trial += 1;
+    counts.set(tid, c);
+  }
+
+  const teacherIds = [...counts.keys()];
+  const names = new Map<string, string>();
+  if (teacherIds.length) {
+    const { data } = await supabase.from("teacher").select("id, name").in("id", teacherIds);
+    for (const t of data || []) names.set(t.id, (t.name as string) || t.id);
+  }
+
+  return teacherIds
+    .map((id) => {
+      const c = counts.get(id)!;
+      return { teacherId: id, name: names.get(id) || id, trial: c.trial, paid: c.paid, total: c.trial + c.paid };
+    })
+    .sort((a, b) => b.total - a.total);
+}
+
+export async function listPendingOnboarding() {
+  const { data, error } = await supabase
+    .from("teacher_onboarding")
+    .select("discord_user_id, full_name, email, created_at")
+    .eq("status", "pending")
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function isTeacherResponsibleForCourse(teacherId: string, courseId: string) {
+  const { data, error } = await supabase
+    .from("teacher_course_responsibility")
+    .select("id")
+    .eq("teacher_id", teacherId)
+    .eq("course_id", courseId)
+    .eq("active", true)
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(data);
 }
 
 export async function listTeacherResponsibilities(teacherId: string) {

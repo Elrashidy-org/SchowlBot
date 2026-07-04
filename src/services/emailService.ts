@@ -2,19 +2,68 @@ import { Resend } from "resend";
 import { config } from "../config.js";
 import { supabase } from "../db/supabase.js";
 import { ClientLead } from "../types.js";
-import { renderCommunicationTemplate } from "./templateService.js";
+import { renderForLead } from "./templateService.js";
+import { renderBrandedEmail } from "../utils/emailTemplate.js";
+import { listCoursesForUpsell } from "./courseService.js";
+
+const COURSES_URL = "https://www.schowl.com/#courses";
+// Templates where the upsell would be a distraction (e.g. the pre-lesson reminder).
+const NO_UPSELL_TEMPLATES = new Set(["trial_reminder_24h"]);
+
+function slugify(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/\bcourse\b/gi, "")
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+async function buildCourseUpsell(language: string | null) {
+  try {
+    const rows = await listCoursesForUpsell();
+    const ar = language === "ar";
+    const template = config.emailCourseUrlTemplate;
+    return rows
+      .map((c) => {
+        const name = (ar ? c.name_ar : c.name_en) || c.name_en || c.name_ar || "";
+        const ageText =
+          c.min_age && c.max_age
+            ? ar
+              ? `من ${c.min_age} إلى ${c.max_age} سنة`
+              : `Ages ${c.min_age}–${c.max_age}`
+            : undefined;
+        const url =
+          template && c.name_en
+            ? template.replace("{slug}", slugify(c.name_en)).replace("{id}", c.id)
+            : undefined;
+        return { name, ageText, url };
+      })
+      .filter((c) => c.name);
+  } catch (error) {
+    console.error("Course upsell fetch failed", error);
+    return [];
+  }
+}
 
 const resend = config.resendApiKey ? new Resend(config.resendApiKey) : null;
 
-export async function sendLeadEmail(lead: ClientLead, templateKey: string) {
+// `templateKey` is a base key (e.g. "lead_received"); the language variant is
+// chosen from the lead's language.
+export async function sendLeadEmail(
+  lead: ClientLead,
+  templateKey: string,
+  extraContext: Record<string, string | number | null | undefined> = {},
+) {
   if (!resend || !lead.email) {
     return;
   }
 
-  const rendered = await renderCommunicationTemplate(templateKey, {
+  const rendered = await renderForLead(templateKey, lead.language, {
     parent_name: lead.parent_name,
     child_name: lead.child_name,
     course_interest: lead.course_interest,
+    ...extraContext,
   });
 
   try {
@@ -22,7 +71,14 @@ export async function sendLeadEmail(lead: ClientLead, templateKey: string) {
       from: config.resendFromEmail,
       to: lead.email,
       subject: rendered.subject || "Schowl",
-      html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#0b1638">${rendered.body}</div>`,
+      html: renderBrandedEmail({
+        subject: rendered.subject,
+        body: rendered.body,
+        language: lead.language,
+        logoUrl: config.emailLogoUrl,
+        courses: NO_UPSELL_TEMPLATES.has(templateKey) ? [] : await buildCourseUpsell(lead.language),
+        coursesUrl: COURSES_URL,
+      }),
     });
 
     await supabase.from("communication_log").insert({
@@ -40,6 +96,48 @@ export async function sendLeadEmail(lead: ClientLead, templateKey: string) {
       channel: "email",
       template_key: templateKey,
       recipient: lead.email,
+      status: "failed",
+      error_message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+// Send a branded email that isn't tied to a lead (e.g. membership renewals).
+export async function sendTemplatedEmail(input: {
+  to: string | null | undefined;
+  templateKey: string;
+  language?: string | null;
+  context: Record<string, string | number | null | undefined>;
+  leadId?: string | null;
+}) {
+  if (!resend || !input.to) return;
+  const rendered = await renderForLead(input.templateKey, input.language, input.context);
+  try {
+    const result = await resend.emails.send({
+      from: config.resendFromEmail,
+      to: input.to,
+      subject: rendered.subject || "Schowl",
+      html: renderBrandedEmail({
+        subject: rendered.subject,
+        body: rendered.body,
+        language: input.language,
+        logoUrl: config.emailLogoUrl,
+      }),
+    });
+    await supabase.from("communication_log").insert({
+      lead_id: input.leadId || null,
+      channel: "email",
+      template_key: input.templateKey,
+      recipient: input.to,
+      status: "sent",
+      provider_message_id: result.data?.id,
+    });
+  } catch (error) {
+    await supabase.from("communication_log").insert({
+      lead_id: input.leadId || null,
+      channel: "email",
+      template_key: input.templateKey,
+      recipient: input.to,
       status: "failed",
       error_message: error instanceof Error ? error.message : String(error),
     });

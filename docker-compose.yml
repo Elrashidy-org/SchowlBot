@@ -1,0 +1,10 @@
+services:
+  schowlbot:
+    build: .
+    container_name: schowlbot
+    restart: unless-stopped
+    env_file: .env
+    # Bound to localhost only; put Nginx (with HTTPS) in front for the public
+    # lead endpoint. Change to "3001:3001" only if you don't use a reverse proxy.
+    ports:
+      - "127.0.0.1:3001:3001"
