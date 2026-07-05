@@ -524,6 +524,13 @@ export const slashCommands = [
     )
     .addSubcommand((sub) =>
       sub.setName("renewals").setDescription("Show upcoming membership renewals"),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("report")
+        .setDescription("Show a student's session report (recordings + ratings)")
+        .addStringOption((opt) => opt.setName("student").setDescription("Name or student ID").setRequired(true))
+        .addBooleanOption((opt) => opt.setName("email").setDescription("Also email the report to the parent").setRequired(false)),
     ),
 
   new SlashCommandBuilder()
@@ -552,6 +559,7 @@ export const slashCommands = [
         .addIntegerOption((opt) =>
           opt.setName("months").setDescription("Renew membership by N months").setMinValue(1).setMaxValue(24).setRequired(false),
         )
+        .addBooleanOption((opt) => opt.setName("receipt").setDescription("Email the parent a receipt (default yes)").setRequired(false))
         .addStringOption((opt) => opt.setName("notes").setDescription("Notes").setRequired(false)),
     )
     .addSubcommand((sub) =>
@@ -565,6 +573,18 @@ export const slashCommands = [
         .setName("revenue")
         .setDescription("Total revenue over a period")
         .addIntegerOption((opt) => opt.setName("days").setDescription("Days back (default 30)").setMinValue(1).setMaxValue(365).setRequired(false)),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("outstanding")
+        .setDescription("Students who owe (membership due soon or overdue)")
+        .addIntegerOption((opt) => opt.setName("days").setDescription("Due within N days (default 3)").setMinValue(0).setMaxValue(60).setRequired(false)),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("export")
+        .setDescription("Export payments as CSV")
+        .addIntegerOption((opt) => opt.setName("days").setDescription("Days back (default 90)").setMinValue(1).setMaxValue(730).setRequired(false)),
     ),
 
   new SlashCommandBuilder()

@@ -79,7 +79,15 @@ import {
 import { courseLabel, findCourseByNameOrId } from "../services/courseService.js";
 import { addReferral, listReferrals, rewardReferral } from "../services/referralService.js";
 import { getWeeklySummary } from "../services/summaryService.js";
-import { getRevenue, getStudentPaidTotal, listPayments, recordPayment } from "../services/paymentService.js";
+import {
+  exportPayments,
+  getRevenue,
+  getStudentPaidTotal,
+  listOutstandingMemberships,
+  listPayments,
+  recordPayment,
+} from "../services/paymentService.js";
+import { sendStudentReport, sendTemplatedEmail } from "../services/emailService.js";
 import {
   cancelStudent,
   enrollStudent,
@@ -96,6 +104,7 @@ import {
   completeLesson,
   findLessonsInRange,
   findScheduleConflicts,
+  listCompletedSessionsForLead,
   listLessonsForLead,
   listUpcomingLessonsForTeacher,
   markLessonNoShow,
@@ -1512,6 +1521,47 @@ async function handleStudentCommand(interaction: ChatInputCommandInteraction) {
     return;
   }
 
+  if (sub === "report") {
+    const student = await mustFindStudent(interaction.options.getString("student", true));
+    if (!student.lead_id) {
+      await interaction.reply({ content: "This student has no linked sessions yet.", ephemeral: true });
+      return;
+    }
+    const sessions = await listCompletedSessionsForLead(student.lead_id);
+    const rated = sessions.filter((s) => s.student_rating != null);
+    const avg = rated.length ? rated.reduce((a, s) => a + (s.student_rating as number), 0) / rated.length : null;
+    const embed = new EmbedBuilder()
+      .setTitle(`Report card: ${student.name}`)
+      .setColor(0x00b5b5)
+      .setDescription(
+        sessions.length
+          ? `Average rating: **${avg != null ? avg.toFixed(1) : "-"}/5** across ${sessions.length} session(s)\n\n${sessions
+              .map((s) => `${(s.scheduled_at as string).slice(0, 10)} — ⭐${s.student_rating ?? "-"}/5${s.recording_url ? ` · [recording](${s.recording_url})` : ""}`)
+              .join("\n")
+              .slice(0, 3800)}`
+          : "No completed sessions yet.",
+      );
+    const wantEmail = interaction.options.getBoolean("email") ?? false;
+    let note = "";
+    if (wantEmail) {
+      const sent = await sendStudentReport({
+        to: student.email,
+        language: "en",
+        parentName: student.parent_name,
+        childName: student.name,
+        avgRating: avg,
+        sessions: sessions.map((s) => ({
+          date: (s.scheduled_at as string).slice(0, 10),
+          rating: (s.student_rating as number | null) ?? null,
+          recordingUrl: (s.recording_url as string | null) ?? null,
+        })),
+      });
+      note = sent ? " (emailed to parent)" : " (no parent email on file)";
+    }
+    await interaction.reply({ content: note ? `Report${note}` : undefined, embeds: [embed], ephemeral: true });
+    return;
+  }
+
   if (sub === "renewals") {
     const rows = await listUpcomingRenewals(30);
     await interaction.reply({
@@ -1550,13 +1600,35 @@ async function handlePaymentCommand(interaction: ChatInputCommandInteraction) {
       notes: interaction.options.getString("notes"),
       recordedByBotUserId: actor?.id,
     });
+
+    // Email the parent a receipt (default on).
+    const sendReceipt = interaction.options.getBoolean("receipt") ?? true;
+    let receiptNote = "";
+    if (sendReceipt && student.email) {
+      const renewsOn = renewedTo || (await getActiveMembership(student.id))?.renews_on || "-";
+      await sendTemplatedEmail({
+        to: student.email,
+        templateKey: "payment_receipt",
+        language: "en",
+        context: {
+          parent_name: student.parent_name || "",
+          child_name: student.name,
+          amount: payment.amount,
+          currency: payment.currency,
+          renews_on: renewsOn,
+        },
+        leadId: student.lead_id,
+      });
+      receiptNote = "\nReceipt emailed to the parent.";
+    }
+
     await interaction.reply({
       embeds: [
         okEmbed(
           "Payment recorded",
           `**${payment.amount} ${payment.currency}** from **${student.name}** via ${payment.method}.${
             renewedTo ? `\nMembership renewed — now paid through **${renewedTo}**.` : ""
-          }`,
+          }${receiptNote}`,
         ),
       ],
       ephemeral: true,
@@ -1585,6 +1657,45 @@ async function handlePaymentCommand(interaction: ChatInputCommandInteraction) {
       embeds: [okEmbed(`Revenue (last ${days} days)`, lines.length ? lines.join("\n") : "No payments in this period.")],
       ephemeral: true,
     });
+    return;
+  }
+
+  if (sub === "outstanding") {
+    const days = interaction.options.getInteger("days") ?? 3;
+    const rows = await listOutstandingMemberships(days);
+    const today = new Date().toISOString().slice(0, 10);
+    await interaction.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle(`Outstanding (due within ${days}d)`)
+          .setColor(0xf5a623)
+          .setDescription(
+            rows.length
+              ? rows
+                  .map((r) => `${r.renews_on <= today ? "⚠️ " : ""}**${r.renews_on}** — ${r.name} (${r.plan}${r.price != null ? `, ${r.price} ${r.currency}` : ""})`)
+                  .join("\n")
+                  .slice(0, 4000)
+              : "Nobody is due — all paid up.",
+          ),
+      ],
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (sub === "export") {
+    const days = interaction.options.getInteger("days") ?? 90;
+    const rows = await exportPayments(days);
+    if (rows.length === 0) {
+      await interaction.reply({ content: `No payments in the last ${days} days.`, ephemeral: true });
+      return;
+    }
+    const csv = [
+      "paid_on,student,amount,currency,method,notes",
+      ...rows.map((r) => [r.paid_on, r.name, r.amount, r.currency, r.method, r.notes ?? ""].map((v) => csvCell(String(v ?? ""))).join(",")),
+    ].join("\n");
+    const file = new AttachmentBuilder(Buffer.from(csv, "utf8"), { name: `payments_last_${days}d.csv` });
+    await interaction.reply({ content: `Exported ${rows.length} payments.`, files: [file], ephemeral: true });
     return;
   }
 }

@@ -102,6 +102,43 @@ export async function sendLeadEmail(
   }
 }
 
+// Email a parent their child's progress report (session dates, ratings, recordings).
+export async function sendStudentReport(input: {
+  to: string | null | undefined;
+  language?: string | null;
+  parentName?: string | null;
+  childName: string;
+  avgRating: number | null;
+  sessions: { date: string; rating: number | null; recordingUrl: string | null }[];
+}) {
+  if (!resend || !input.to) return false;
+  const lines = input.sessions.map(
+    (s) => `${s.date} — rating ${s.rating ?? "-"}/5${s.recordingUrl ? `  ${s.recordingUrl}` : ""}`,
+  );
+  const body = [
+    `Hi ${input.parentName || ""}, here is ${input.childName}'s Schowl progress report.`,
+    `Average rating: ${input.avgRating != null ? input.avgRating.toFixed(1) : "-"}/5 across ${input.sessions.length} session(s).`,
+    ...lines,
+  ].join("\n");
+  try {
+    await resend.emails.send({
+      from: config.resendFromEmail,
+      to: input.to,
+      subject: `${input.childName}'s Schowl progress report`,
+      html: renderBrandedEmail({
+        subject: `${input.childName}'s progress report`,
+        body,
+        language: input.language,
+        logoUrl: config.emailLogoUrl,
+      }),
+    });
+    return true;
+  } catch (error) {
+    console.error("Student report email failed", error);
+    return false;
+  }
+}
+
 // Send a branded email that isn't tied to a lead (e.g. membership renewals).
 export async function sendTemplatedEmail(input: {
   to: string | null | undefined;

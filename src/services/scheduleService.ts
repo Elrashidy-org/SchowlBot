@@ -455,6 +455,18 @@ export async function findLessonsInRange(teacherId: string, startsAt: string, en
   return data || [];
 }
 
+export async function listCompletedSessionsForLead(leadId: string) {
+  const { data, error } = await supabase
+    .from("lesson")
+    .select("id, scheduled_at, student_rating, recording_url, session_notes")
+    .eq("lead_id", leadId)
+    .eq("status", "completed")
+    .order("scheduled_at", { ascending: true })
+    .limit(50);
+  if (error) throw error;
+  return data || [];
+}
+
 export async function listLessonsForLead(leadId: string) {
   const { data, error } = await supabase
     .from("lesson")

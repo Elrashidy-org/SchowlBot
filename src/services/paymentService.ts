@@ -77,6 +77,47 @@ export async function getRevenue(days: number) {
   return totals;
 }
 
+// Active memberships due within `days` (renews_on <= cutoff) — i.e. who owes.
+export async function listOutstandingMemberships(days: number) {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() + days);
+  const { data: ms, error } = await supabase
+    .from("membership")
+    .select("student_id, renews_on, price, currency, plan")
+    .eq("status", "active")
+    .lte("renews_on", cutoff.toISOString().slice(0, 10))
+    .order("renews_on", { ascending: true })
+    .limit(50);
+  if (error) throw error;
+  const rows = ms || [];
+  const ids = [...new Set(rows.map((r) => r.student_id).filter(Boolean))];
+  const names = new Map<string, string>();
+  if (ids.length) {
+    const { data } = await supabase.from("student").select("id, name").in("id", ids);
+    for (const s of data || []) names.set(s.id, s.name);
+  }
+  return rows.map((r) => ({ ...r, name: r.student_id ? names.get(r.student_id) ?? r.student_id : "-" }));
+}
+
+export async function exportPayments(days: number) {
+  const since = new Date(Date.now() - Math.max(1, days) * 86400000).toISOString().slice(0, 10);
+  const { data, error } = await supabase
+    .from("payment")
+    .select("paid_on, amount, currency, method, notes, student_id")
+    .gte("paid_on", since)
+    .order("paid_on", { ascending: false })
+    .limit(5000);
+  if (error) throw error;
+  const rows = data || [];
+  const ids = [...new Set(rows.map((r) => r.student_id).filter(Boolean))];
+  const names = new Map<string, string>();
+  if (ids.length) {
+    const { data: students } = await supabase.from("student").select("id, name").in("id", ids as string[]);
+    for (const s of students || []) names.set(s.id, s.name);
+  }
+  return rows.map((r) => ({ ...r, name: r.student_id ? names.get(r.student_id) ?? "" : "" }));
+}
+
 export async function getStudentPaidTotal(studentId: string) {
   const { data, error } = await supabase
     .from("payment")

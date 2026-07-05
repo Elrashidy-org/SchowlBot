@@ -100,8 +100,8 @@ export const COMMAND_CATALOG: CommandHelp[] = [
     note: "The assigned teacher marks their own session; staff can mark any.",
   },
   {
-    usage: "/student enroll|view|list|level|renew|cancel|renewals",
-    description: "Enroll students, track level, and manage memberships & renewals.",
+    usage: "/student enroll|view|list|level|renew|cancel|renewals|report",
+    description: "Enroll students, track level, manage memberships, and share progress reports.",
     roles: ["owner", "admin", "team_lead", "sales"],
   },
   {
@@ -110,8 +110,8 @@ export const COMMAND_CATALOG: CommandHelp[] = [
     roles: ["owner", "admin", "team_lead", "sales"],
   },
   {
-    usage: "/payment record|list|revenue",
-    description: "Record payments (optionally renewing the membership) and report revenue.",
+    usage: "/payment record|list|revenue|outstanding|export",
+    description: "Record payments (with receipts), report revenue, see who owes, export CSV.",
     roles: ["owner", "admin", "team_lead", "sales"],
   },
   {
