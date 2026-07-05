@@ -506,6 +506,22 @@ export async function getDigestStats() {
   };
 }
 
+// Stalled leads (not converted/lost, no update in `days`, has an email) —
+// candidates for a manually-triggered re-engagement campaign.
+export async function listColdLeads(days: number) {
+  const since = new Date(Date.now() - Math.max(1, days) * 86400000).toISOString();
+  const { data, error } = await supabase
+    .from("client_lead")
+    .select("*")
+    .not("status", "in", "(converted,lost,not_fit)")
+    .lte("updated_at", since)
+    .not("email", "is", null)
+    .order("updated_at", { ascending: true })
+    .limit(200);
+  if (error) throw error;
+  return data as ClientLead[];
+}
+
 export async function listDueLeads(page = 1) {
   const [from, to] = pageRange(page);
   const { data, error } = await supabase

@@ -29,6 +29,13 @@ export const slashCommands = [
     .setDescription("Weekly business summary with teacher fill rate"),
 
   new SlashCommandBuilder()
+    .setName("reengage")
+    .setDescription("Email cold leads a re-engagement message")
+    .addIntegerOption((opt) =>
+      opt.setName("days").setDescription("Leads with no update in N days (default 30)").setMinValue(3).setMaxValue(365).setRequired(false),
+    ),
+
+  new SlashCommandBuilder()
     .setName("init")
     .setDescription("Initialize your SchowlBot profile")
     .addSubcommand((sub) =>
@@ -220,6 +227,24 @@ export const slashCommands = [
       sub
         .setName("payroll")
         .setDescription("Export completed-lesson counts per teacher (CSV)")
+        .addIntegerOption((opt) =>
+          opt.setName("month").setDescription("Month 1-12 (default: this month)").setMinValue(1).setMaxValue(12).setRequired(false),
+        )
+        .addIntegerOption((opt) =>
+          opt.setName("year").setDescription("Year (default: this year)").setMinValue(2024).setRequired(false),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("rate")
+        .setDescription("Set a teacher's per-session pay rate")
+        .addStringOption((opt) => opt.setName("teacher").setDescription("Mention or teacher ID").setRequired(true))
+        .addNumberOption((opt) => opt.setName("amount").setDescription("Rate per session").setRequired(true)),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("payout")
+        .setDescription("Monthly payout run (sessions x rate) as CSV")
         .addIntegerOption((opt) =>
           opt.setName("month").setDescription("Month 1-12 (default: this month)").setMinValue(1).setMaxValue(12).setRequired(false),
         )

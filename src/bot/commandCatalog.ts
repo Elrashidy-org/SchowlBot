@@ -84,6 +84,11 @@ export const COMMAND_CATALOG: CommandHelp[] = [
     roles: ["owner", "admin", "team_lead", "sales"],
   },
   {
+    usage: "/reengage",
+    description: "Email cold leads a re-engagement message (unsubscribed skipped).",
+    roles: ["owner", "admin", "team_lead", "sales"],
+  },
+  {
     usage: "/trial suggest|schedule|reschedule|done|cancel|no-show",
     description: "Suggest teachers and manage trial lessons.",
     roles: ["owner", "admin", "team_lead", "sales"],
@@ -120,8 +125,8 @@ export const COMMAND_CATALOG: CommandHelp[] = [
     roles: ["owner", "admin", "team_lead", "sales"],
   },
   {
-    usage: "/teacher approve|reject|activate|deactivate|profile|load|pending|payroll|responsibility",
-    description: "Approve and manage teachers, course responsibilities, and payroll export.",
+    usage: "/teacher approve|reject|activate|deactivate|profile|load|pending|payroll|rate|payout|responsibility",
+    description: "Approve/manage teachers, set pay rates, and run payroll/payout exports.",
     roles: ["owner", "admin", "team_lead"],
   },
   {

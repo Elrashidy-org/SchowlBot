@@ -32,6 +32,7 @@ export function renderBrandedEmail(input: {
   headerStyle?: "light" | "dark";
   courses?: { name: string; ageText?: string; url?: string }[];
   coursesUrl?: string;
+  unsubscribeUrl?: string;
 }) {
   const dark = input.headerStyle === "dark";
   const rtl = input.language === "ar";
@@ -132,7 +133,11 @@ export function renderBrandedEmail(input: {
         <tr>
           <td style="background:${INK};padding:22px 32px;text-align:center;color:#AFC0D4;font-size:12px;line-height:1.6;font-family:${FONT};">
             <span style="color:#FFFFFF;font-weight:700;">Schowl</span> — online courses that build creators, not just consumers.<br>
-            This is an automated message; please don't reply to this email.
+            This is an automated message; please don't reply to this email.${
+              input.unsubscribeUrl
+                ? `<br><a href="${input.unsubscribeUrl}" style="color:#AFC0D4;text-decoration:underline;">Unsubscribe</a>`
+                : ""
+            }
           </td>
         </tr>
       </table>

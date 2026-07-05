@@ -229,6 +229,49 @@ export async function getTeacherPayroll(year: number, month: number) {
     .sort((a, b) => b.total - a.total);
 }
 
+export async function setTeacherRate(teacherId: string, rate: number) {
+  const { data, error } = await supabase
+    .from("teacher")
+    .update({ session_rate: rate })
+    .eq("id", teacherId)
+    .select("name, session_rate")
+    .single();
+  if (error) throw error;
+  return data as { name: string | null; session_rate: number };
+}
+
+// Monthly payout run: completed sessions * per-session rate, per teacher.
+export async function getTeacherPayout(year: number, month: number) {
+  const start = new Date(Date.UTC(year, month - 1, 1));
+  const end = new Date(Date.UTC(year, month, 1));
+  const { data: lessons, error } = await supabase
+    .from("lesson")
+    .select("teacher_id")
+    .eq("status", "completed")
+    .gte("scheduled_at", start.toISOString())
+    .lt("scheduled_at", end.toISOString());
+  if (error) throw error;
+
+  const counts = new Map<string, number>();
+  for (const l of lessons || []) {
+    const tid = l.teacher_id as string | null;
+    if (tid) counts.set(tid, (counts.get(tid) || 0) + 1);
+  }
+  const ids = [...counts.keys()];
+  const info = new Map<string, { name: string; rate: number }>();
+  if (ids.length) {
+    const { data } = await supabase.from("teacher").select("id, name, session_rate").in("id", ids);
+    for (const t of data || []) info.set(t.id, { name: (t.name as string) || t.id, rate: Number(t.session_rate || 0) });
+  }
+  return ids
+    .map((id) => {
+      const sessions = counts.get(id)!;
+      const t = info.get(id) || { name: id, rate: 0 };
+      return { teacherId: id, name: t.name, sessions, rate: t.rate, total: sessions * t.rate };
+    })
+    .sort((a, b) => b.total - a.total);
+}
+
 export async function listPendingOnboarding() {
   const { data, error } = await supabase
     .from("teacher_onboarding")

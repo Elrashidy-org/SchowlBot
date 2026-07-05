@@ -5,6 +5,17 @@ import { ClientLead } from "../types.js";
 import { renderForLead } from "./templateService.js";
 import { renderBrandedEmail } from "../utils/emailTemplate.js";
 import { listCoursesForUpsell } from "./courseService.js";
+import { unsubscribeUrl } from "../utils/unsubscribe.js";
+
+// True if the address has opted out of all emails.
+export async function isUnsubscribed(email: string) {
+  const { data } = await supabase
+    .from("email_unsubscribe")
+    .select("email")
+    .eq("email", email.trim().toLowerCase())
+    .maybeSingle();
+  return Boolean(data);
+}
 
 const COURSES_URL = "https://www.schowl.com/#courses";
 // Templates where the upsell would be a distraction (e.g. the pre-lesson reminder).
@@ -58,6 +69,9 @@ export async function sendLeadEmail(
   if (!resend || !lead.email) {
     return;
   }
+  if (await isUnsubscribed(lead.email)) {
+    return;
+  }
 
   const rendered = await renderForLead(templateKey, lead.language, {
     parent_name: lead.parent_name,
@@ -78,6 +92,7 @@ export async function sendLeadEmail(
         logoUrl: config.emailLogoUrl,
         courses: NO_UPSELL_TEMPLATES.has(templateKey) ? [] : await buildCourseUpsell(lead.language),
         coursesUrl: COURSES_URL,
+        unsubscribeUrl: unsubscribeUrl(lead.email),
       }),
     });
 
@@ -112,6 +127,7 @@ export async function sendStudentReport(input: {
   sessions: { date: string; rating: number | null; recordingUrl: string | null }[];
 }) {
   if (!resend || !input.to) return false;
+  if (await isUnsubscribed(input.to)) return false;
   const lines = input.sessions.map(
     (s) => `${s.date} — rating ${s.rating ?? "-"}/5${s.recordingUrl ? `  ${s.recordingUrl}` : ""}`,
   );
@@ -130,6 +146,7 @@ export async function sendStudentReport(input: {
         body,
         language: input.language,
         logoUrl: config.emailLogoUrl,
+        unsubscribeUrl: unsubscribeUrl(input.to),
       }),
     });
     return true;
@@ -148,6 +165,7 @@ export async function sendTemplatedEmail(input: {
   leadId?: string | null;
 }) {
   if (!resend || !input.to) return;
+  if (await isUnsubscribed(input.to)) return;
   const rendered = await renderForLead(input.templateKey, input.language, input.context);
   try {
     const result = await resend.emails.send({
@@ -159,6 +177,7 @@ export async function sendTemplatedEmail(input: {
         body: rendered.body,
         language: input.language,
         logoUrl: config.emailLogoUrl,
+        unsubscribeUrl: unsubscribeUrl(input.to),
       }),
     });
     await supabase.from("communication_log").insert({

@@ -46,6 +46,7 @@ import {
   getLead,
   getLeadStats,
   LEAD_PAGE_SIZE,
+  listColdLeads,
   listDueLeads,
   listLeadActivity,
   listLeadsAssignedTo,
@@ -57,10 +58,12 @@ import {
   approveTeacher,
   getTeacherByDiscordId,
   getTeacherByMentionOrId,
+  getTeacherPayout,
   getTeacherPayroll,
   initTeacherProfile,
   isTeacherResponsibleForCourse,
   listPendingOnboarding,
+  setTeacherRate,
   listTeacherLoad,
   listTeacherResponsibilities,
   rejectTeacher,
@@ -571,6 +574,7 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
   if (command === "funnel") return handleFunnelCommand(interaction);
   if (command === "digest") return handleDigestCommand(interaction);
   if (command === "summary") return handleSummaryCommand(interaction);
+  if (command === "reengage") return handleReengageCommand(interaction);
   if (command === "init") return handleInit(interaction);
   if (command === "lead") return handleLeadCommand(interaction);
   if (command === "teacher") return handleTeacherCommand(interaction);
@@ -802,6 +806,35 @@ async function handleSummaryCommand(interaction: ChatInputCommandInteraction) {
       { name: "Revenue", value: revenueText, inline: true },
     );
   await interaction.reply({ embeds: [embed], ephemeral: true });
+}
+
+async function handleReengageCommand(interaction: ChatInputCommandInteraction) {
+  await requireBotRole(interaction.user.id, ["owner", "admin", "team_lead", "sales"]);
+  const days = interaction.options.getInteger("days") ?? 30;
+  const leads = await listColdLeads(days);
+  if (leads.length === 0) {
+    await interaction.reply({ content: `No cold leads older than ${days} days.`, ephemeral: true });
+    return;
+  }
+  const nowIso = new Date().toISOString();
+  const jobs = leads.map((lead) => ({
+    job_type: "reengagement",
+    lead_id: lead.id,
+    run_at: nowIso,
+    status: "pending",
+    payload: { template: "reengagement" },
+  }));
+  const { error } = await supabase.from("automation_job").insert(jobs);
+  if (error) throw error;
+  await interaction.reply({
+    embeds: [
+      okEmbed(
+        "Re-engagement queued",
+        `Queued **${jobs.length}** re-engagement emails to leads with no activity in ${days}+ days. Unsubscribed recipients are skipped automatically.`,
+      ),
+    ],
+    ephemeral: true,
+  });
 }
 
 async function handleInit(interaction: ChatInputCommandInteraction) {
@@ -1162,6 +1195,37 @@ async function handleTeacherCommand(interaction: ChatInputCommandInteraction) {
       .join("\n");
     await interaction.reply({
       content: `Completed lessons for ${year}-${String(month).padStart(2, "0")}:\n${summary}`.slice(0, 1900),
+      files: [file],
+      ephemeral: true,
+    });
+  } else if (sub === "rate") {
+    const teacher = await mustFindTeacher(interaction.options.getString("teacher", true));
+    const rate = interaction.options.getNumber("amount", true);
+    const updated = await setTeacherRate(teacher.id, rate);
+    await interaction.reply({
+      embeds: [okEmbed("Rate updated", `**${updated.name}** now earns **${updated.session_rate}** per session.`)],
+      ephemeral: true,
+    });
+  } else if (sub === "payout") {
+    const now = new Date();
+    const month = interaction.options.getInteger("month") ?? now.getUTCMonth() + 1;
+    const year = interaction.options.getInteger("year") ?? now.getUTCFullYear();
+    const rows = await getTeacherPayout(year, month);
+    if (rows.length === 0) {
+      await interaction.reply({ content: `No completed sessions for ${year}-${String(month).padStart(2, "0")}.`, ephemeral: true });
+      return;
+    }
+    const grand = rows.reduce((s, r) => s + r.total, 0);
+    const csv = [
+      "Teacher,Sessions,Rate,Total",
+      ...rows.map((r) => `${csvCell(r.name)},${r.sessions},${r.rate},${r.total}`),
+    ].join("\n");
+    const file = new AttachmentBuilder(Buffer.from(csv, "utf8"), {
+      name: `payout_${year}_${String(month).padStart(2, "0")}.csv`,
+    });
+    const summary = rows.slice(0, 15).map((r) => `${r.name}: ${r.sessions}×${r.rate} = **${r.total}**`).join("\n");
+    await interaction.reply({
+      content: `Payout for ${year}-${String(month).padStart(2, "0")} (total **${grand}**):\n${summary}`.slice(0, 1900),
       files: [file],
       ephemeral: true,
     });

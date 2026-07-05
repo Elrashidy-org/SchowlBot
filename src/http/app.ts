@@ -10,6 +10,8 @@ import { AppError, ValidationError } from "../utils/errors.js";
 import { createLead } from "../services/leadService.js";
 import { mapLegacyLeadPayload } from "../services/leadSchemas.js";
 import { isMeetConfigured } from "../services/meetService.js";
+import { supabase } from "../db/supabase.js";
+import { verifyUnsubscribeToken } from "../utils/unsubscribe.js";
 
 export function createHttpApp() {
   const app = express();
@@ -49,6 +51,25 @@ export function createHttpApp() {
       });
     } catch (error) {
       next(error);
+    }
+  });
+
+  app.get("/unsubscribe", async (req, res) => {
+    const email = String(req.query.e || "").trim();
+    const token = String(req.query.t || "");
+    const page = (title: string, msg: string) =>
+      `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font-family:system-ui,Arial;background:#EEF2F7;text-align:center;padding:48px 16px;"><div style="max-width:440px;margin:0 auto;background:#fff;border-radius:14px;padding:32px;"><h2 style="color:#0C4160;">${title}</h2><p style="color:#5B6478;">${msg}</p></div></body></html>`;
+    if (!email || !verifyUnsubscribeToken(email, token)) {
+      res.status(400).send(page("Invalid link", "This unsubscribe link is invalid or expired."));
+      return;
+    }
+    try {
+      await supabase
+        .from("email_unsubscribe")
+        .upsert({ email: email.toLowerCase() }, { onConflict: "email" });
+      res.send(page("You're unsubscribed", "You won't receive any more emails from Schowl. You can reply to any past email if you change your mind."));
+    } catch {
+      res.status(500).send(page("Something went wrong", "Please try again later."));
     }
   });
 
