@@ -527,6 +527,47 @@ export const slashCommands = [
     ),
 
   new SlashCommandBuilder()
+    .setName("payment")
+    .setDescription("Record and report payments")
+    .addSubcommand((sub) =>
+      sub
+        .setName("record")
+        .setDescription("Record a payment (optionally renew the membership)")
+        .addStringOption((opt) => opt.setName("student").setDescription("Name or student ID").setRequired(true))
+        .addNumberOption((opt) => opt.setName("amount").setDescription("Amount paid").setRequired(true))
+        .addStringOption((opt) =>
+          opt
+            .setName("method")
+            .setDescription("Payment method")
+            .setRequired(false)
+            .addChoices(
+              { name: "cash", value: "cash" },
+              { name: "instapay", value: "instapay" },
+              { name: "vodafone cash", value: "vodafone_cash" },
+              { name: "card", value: "card" },
+              { name: "bank transfer", value: "bank" },
+              { name: "other", value: "other" },
+            ),
+        )
+        .addIntegerOption((opt) =>
+          opt.setName("months").setDescription("Renew membership by N months").setMinValue(1).setMaxValue(24).setRequired(false),
+        )
+        .addStringOption((opt) => opt.setName("notes").setDescription("Notes").setRequired(false)),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("list")
+        .setDescription("List recent payments")
+        .addStringOption((opt) => opt.setName("student").setDescription("Filter by student (name or ID)").setRequired(false)),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("revenue")
+        .setDescription("Total revenue over a period")
+        .addIntegerOption((opt) => opt.setName("days").setDescription("Days back (default 30)").setMinValue(1).setMaxValue(365).setRequired(false)),
+    ),
+
+  new SlashCommandBuilder()
     .setName("referral")
     .setDescription("Track referrals and bonuses")
     .addSubcommand((sub) =>

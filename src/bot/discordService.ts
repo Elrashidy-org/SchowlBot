@@ -79,6 +79,7 @@ import {
 import { courseLabel, findCourseByNameOrId } from "../services/courseService.js";
 import { addReferral, listReferrals, rewardReferral } from "../services/referralService.js";
 import { getWeeklySummary } from "../services/summaryService.js";
+import { getRevenue, getStudentPaidTotal, listPayments, recordPayment } from "../services/paymentService.js";
 import {
   cancelStudent,
   enrollStudent,
@@ -570,6 +571,7 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
   if (command === "lesson") return handleLessonCommand(interaction);
   if (command === "student") return handleStudentCommand(interaction);
   if (command === "referral") return handleReferralCommand(interaction);
+  if (command === "payment") return handlePaymentCommand(interaction);
   if (command === "schedule") return handleScheduleCommand(interaction);
   if (command === "material") return handleMaterialCommand(interaction);
   if (command === "system") return handleSystemCommand(interaction);
@@ -769,7 +771,11 @@ async function handleDigestCommand(interaction: ChatInputCommandInteraction) {
 
 async function handleSummaryCommand(interaction: ChatInputCommandInteraction) {
   await requireBotRole(interaction.user.id, ["owner", "admin", "team_lead", "sales"]);
-  const s = await getWeeklySummary();
+  const [s, revenue] = await Promise.all([getWeeklySummary(), getRevenue(7)]);
+  const revenueText =
+    Object.keys(revenue).length > 0
+      ? Object.entries(revenue).map(([cur, amt]) => `${amt.toFixed(0)} ${cur}`).join(", ")
+      : "0";
   const embed = new EmbedBuilder()
     .setTitle("Weekly summary (last 7 days)")
     .setColor(0x00b5b5)
@@ -784,6 +790,7 @@ async function handleSummaryCommand(interaction: ChatInputCommandInteraction) {
         inline: true,
       },
       { name: "Renewals (next 7d)", value: String(s.upcomingRenewals), inline: true },
+      { name: "Revenue", value: revenueText, inline: true },
     );
   await interaction.reply({ embeds: [embed], ephemeral: true });
 }
@@ -1433,6 +1440,7 @@ async function handleStudentCommand(interaction: ChatInputCommandInteraction) {
     const student = await mustFindStudent(interaction.options.getString("student", true));
     const membership = await getActiveMembership(student.id);
     const course = student.course_id ? await findCourseByNameOrId(student.course_id) : null;
+    const paid = await getStudentPaidTotal(student.id);
     const embed = new EmbedBuilder()
       .setTitle(`Student: ${student.name}`)
       .setColor(0x00b5b5)
@@ -1448,6 +1456,11 @@ async function handleStudentCommand(interaction: ChatInputCommandInteraction) {
           value: membership
             ? `${membership.plan} · renews **${membership.renews_on}**${membership.price != null ? ` · ${membership.price} ${membership.currency}` : ""}`
             : "none",
+          inline: false,
+        },
+        {
+          name: "Paid to date",
+          value: paid.count ? `${paid.total} ${paid.currency} (${paid.count} payment${paid.count > 1 ? "s" : ""}, last ${paid.lastPaidOn})` : "none",
           inline: false,
         },
       )
@@ -1515,6 +1528,61 @@ async function handleStudentCommand(interaction: ChatInputCommandInteraction) {
               : "No renewals in the next 30 days.",
           ),
       ],
+      ephemeral: true,
+    });
+    return;
+  }
+}
+
+async function handlePaymentCommand(interaction: ChatInputCommandInteraction) {
+  await requireBotRole(interaction.user.id, ["owner", "admin", "team_lead", "sales"]);
+  const actor = await getBotUserByDiscordId(interaction.user.id);
+  const sub = interaction.options.getSubcommand();
+
+  if (sub === "record") {
+    const student = await mustFindStudent(interaction.options.getString("student", true));
+    const months = interaction.options.getInteger("months") ?? undefined;
+    const { payment, renewedTo } = await recordPayment({
+      studentId: student.id,
+      amount: interaction.options.getNumber("amount", true),
+      method: interaction.options.getString("method") || undefined,
+      months,
+      notes: interaction.options.getString("notes"),
+      recordedByBotUserId: actor?.id,
+    });
+    await interaction.reply({
+      embeds: [
+        okEmbed(
+          "Payment recorded",
+          `**${payment.amount} ${payment.currency}** from **${student.name}** via ${payment.method}.${
+            renewedTo ? `\nMembership renewed — now paid through **${renewedTo}**.` : ""
+          }`,
+        ),
+      ],
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (sub === "list") {
+    const studentRaw = interaction.options.getString("student");
+    const studentId = studentRaw ? (await mustFindStudent(studentRaw)).id : undefined;
+    const rows = await listPayments(studentId);
+    await interaction.reply({
+      content: rows.length
+        ? rows.map((p) => `${p.paid_on} | ${p.amount} ${p.currency} | ${p.method}${p.notes ? ` | ${p.notes}` : ""}`).join("\n").slice(0, 1900)
+        : "No payments found.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (sub === "revenue") {
+    const days = interaction.options.getInteger("days") ?? 30;
+    const totals = await getRevenue(days);
+    const lines = Object.entries(totals).map(([cur, amt]) => `${amt.toFixed(2)} ${cur}`);
+    await interaction.reply({
+      embeds: [okEmbed(`Revenue (last ${days} days)`, lines.length ? lines.join("\n") : "No payments in this period.")],
       ephemeral: true,
     });
     return;

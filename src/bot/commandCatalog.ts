@@ -110,6 +110,11 @@ export const COMMAND_CATALOG: CommandHelp[] = [
     roles: ["owner", "admin", "team_lead", "sales"],
   },
   {
+    usage: "/payment record|list|revenue",
+    description: "Record payments (optionally renewing the membership) and report revenue.",
+    roles: ["owner", "admin", "team_lead", "sales"],
+  },
+  {
     usage: "/schedule teacher|conflicts",
     description: "View a teacher's week agenda or find overlapping lessons.",
     roles: ["owner", "admin", "team_lead", "sales"],
