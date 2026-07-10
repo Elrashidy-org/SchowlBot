@@ -106,9 +106,26 @@ RESEND_FROM_EMAIL=Schowl <noreply@schowl.com>
 TURNSTILE_SECRET_KEY=       # optional
 ```
 
+## Database migrations
+
+Run every file in `supabase/migrations/` **in filename order**, in the SQL Editor
+(or `psql`). The order depends on your database:
+
+- **Fresh / self-hosted / local Supabase** — start with `000_base_schema.sql`.
+  Migration `001` *alters* tables the main Schowl web app normally owns
+  (`courses`, `teacher`, `lesson`, `client`, `teacher_course`,
+  `password_reset_tokens`); `000` creates those base tables first so `001..012`
+  apply on top. Order: `000 → 001 → 002 → … → 012`.
+- **Existing Schowl database** (those base tables already exist) — **skip `000`**
+  and run `001 → 012`.
+
+Note: a fresh database has **empty** `courses`/`teacher`/`client`. The bot needs
+at least one course to exist for `/trial` and `/student enroll` — the website
+normally creates courses, or import them from your other database.
+
 ## One-time setup after first deploy
 
-1. Run the SQL migrations in `supabase/migrations/` (001 → 004) in the Supabase SQL Editor.
+1. Run the migrations (see above).
 2. Register global slash commands once (locally, with prod env, or via a one-off job):
    `npm run commands:deploy`  (global — works across all servers).
 3. In Discord: `/config channel set purpose:leads` in your leads channel, and
