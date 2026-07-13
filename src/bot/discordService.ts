@@ -81,7 +81,17 @@ import {
 } from "../services/availabilityService.js";
 import { addCourse, courseLabel, findCourseByNameOrId, listCourses } from "../services/courseService.js";
 import { addReferral, listReferrals, rewardReferral } from "../services/referralService.js";
-import { exportCampRegistrations, listCampRegistrations } from "../services/campService.js";
+import {
+  assignToGroup,
+  autoGroup,
+  createCampGroup,
+  exportCampRegistrations,
+  findCampGroup,
+  findCampRegistration,
+  listCampGroups,
+  listCampRegistrations,
+  listGroupMembers,
+} from "../services/campService.js";
 import { getWeeklySummary } from "../services/summaryService.js";
 import {
   exportPayments,
@@ -1803,9 +1813,82 @@ async function handlePaymentCommand(interaction: ChatInputCommandInteraction) {
 
 async function handleCampCommand(interaction: ChatInputCommandInteraction) {
   await requireBotRole(interaction.user.id, ["owner", "admin", "team_lead", "sales"]);
+  const groupSub = interaction.options.getSubcommandGroup(false);
   const sub = interaction.options.getSubcommand();
-  const camp = interaction.options.getString("camp") || undefined;
 
+  if (groupSub === "group") {
+    if (sub === "create") {
+      const teacherRaw = interaction.options.getString("teacher");
+      const teacher = teacherRaw ? await mustFindTeacher(teacherRaw) : null;
+      const grp = await createCampGroup({
+        camp: interaction.options.getString("camp", true),
+        name: interaction.options.getString("name", true),
+        capacity: interaction.options.getInteger("capacity") ?? undefined,
+        teacherId: teacher?.id,
+        chatLink: interaction.options.getString("chat_link"),
+      });
+      await interaction.reply({
+        embeds: [okEmbed("Group created", `**${grp.name}** (${grp.camp}), capacity ${grp.capacity}.\nID: \`${grp.id}\``)],
+        ephemeral: true,
+      });
+      return;
+    }
+    if (sub === "assign") {
+      const reg = await findCampRegistration(interaction.options.getString("registrant", true));
+      if (!reg) throw new Error("Registrant not found.");
+      const grp = await findCampGroup(interaction.options.getString("group", true));
+      if (!grp) throw new Error("Group not found.");
+      await assignToGroup(reg.id, grp);
+      await interaction.reply({
+        embeds: [okEmbed("Assigned", `**${reg.child_name}** added to **${grp.name}**.`)],
+        ephemeral: true,
+      });
+      return;
+    }
+    if (sub === "auto") {
+      const result = await autoGroup(
+        interaction.options.getString("camp", true),
+        interaction.options.getInteger("size") ?? 5,
+      );
+      await interaction.reply({
+        embeds: [okEmbed("Auto-grouped", `Created **${result.groupsCreated}** group(s), assigned **${result.assigned}** registrant(s).`)],
+        ephemeral: true,
+      });
+      return;
+    }
+    if (sub === "list") {
+      const rows = await listCampGroups(interaction.options.getString("camp") || undefined);
+      await interaction.reply({
+        content: rows.length
+          ? rows.map((g) => `\`${g.id.slice(0, 8)}\` | ${g.name} | ${g.members}/${g.capacity}`).join("\n").slice(0, 1900)
+          : "No groups yet.",
+        ephemeral: true,
+      });
+      return;
+    }
+    if (sub === "members") {
+      const grp = await findCampGroup(interaction.options.getString("group", true));
+      if (!grp) throw new Error("Group not found.");
+      const members = await listGroupMembers(grp.id);
+      await interaction.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle(`${grp.name} — members`)
+            .setColor(0x00b5b5)
+            .setDescription(
+              members.length
+                ? members.map((m) => `• ${m.child_name}${m.child_age ? `, ${m.child_age}` : ""} — ${m.parent_name || "-"} (${m.phone_e164 || "-"})`).join("\n")
+                : "No members yet.",
+            ),
+        ],
+        ephemeral: true,
+      });
+      return;
+    }
+    return;
+  }
+
+  const camp = interaction.options.getString("camp") || undefined;
   if (sub === "list") {
     const rows = await listCampRegistrations(camp);
     await interaction.reply({
@@ -2064,7 +2147,8 @@ async function handleMaterialCommand(interaction: ChatInputCommandInteraction) {
     const links = [
       material.resource_url ? `Resource: ${material.resource_url}` : null,
       material.presentation_url ? `Presentation: ${material.presentation_url}` : null,
-      material.quiz_url ? `Quiz: ${material.quiz_url}` : null,
+      material.pre_quiz_url ? `Pre-quiz: ${material.pre_quiz_url}` : null,
+      material.post_quiz_url ? `Post-quiz: ${material.post_quiz_url}` : null,
       material.attachment_url ? `Attachment: ${material.attachment_url}` : null,
     ].filter(Boolean);
     await interaction.reply({
@@ -2081,7 +2165,8 @@ async function handleMaterialCommand(interaction: ChatInputCommandInteraction) {
               const tags = [
                 row.resource_url ? "resource" : null,
                 row.presentation_url ? "slides" : null,
-                row.quiz_url ? "quiz" : null,
+                row.pre_quiz_url ? "pre-quiz" : null,
+                row.post_quiz_url ? "post-quiz" : null,
               ].filter(Boolean);
               return `Lesson ${row.lesson_number}: ${row.title_en}${tags.length ? ` [${tags.join(", ")}]` : ""}`;
             })
@@ -2098,7 +2183,8 @@ async function handleMaterialCommand(interaction: ChatInputCommandInteraction) {
       titleEn: interaction.options.getString("title", true),
       resourceUrl: interaction.options.getString("url") || undefined,
       presentationUrl: interaction.options.getString("presentation") || undefined,
-      quizUrl: interaction.options.getString("quiz") || undefined,
+      preQuizUrl: interaction.options.getString("pre_quiz") || undefined,
+      postQuizUrl: interaction.options.getString("post_quiz") || undefined,
     });
     await interaction.reply({ content: `Material saved for lesson ${material.lesson_number}.`, ephemeral: true });
   } else if (sub === "remove") {

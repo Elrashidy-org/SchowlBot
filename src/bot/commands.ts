@@ -626,6 +626,47 @@ export const slashCommands = [
         .setName("export")
         .setDescription("Export camp registrations as CSV")
         .addStringOption((opt) => opt.setName("camp").setDescription("Filter by camp name").setRequired(false)),
+    )
+    .addSubcommandGroup((group) =>
+      group
+        .setName("group")
+        .setDescription("Manage camp groups (4-5 students each)")
+        .addSubcommand((sub) =>
+          sub
+            .setName("create")
+            .setDescription("Create a camp group")
+            .addStringOption((o) => o.setName("camp").setDescription("Camp name").setRequired(true))
+            .addStringOption((o) => o.setName("name").setDescription("Group name").setRequired(true))
+            .addIntegerOption((o) => o.setName("capacity").setDescription("Max students (default 5)").setMinValue(1).setMaxValue(10).setRequired(false))
+            .addStringOption((o) => o.setName("teacher").setDescription("Teacher mention or ID").setRequired(false))
+            .addStringOption((o) => o.setName("chat_link").setDescription("Group chat invite link").setRequired(false)),
+        )
+        .addSubcommand((sub) =>
+          sub
+            .setName("assign")
+            .setDescription("Add a registrant to a group")
+            .addStringOption((o) => o.setName("registrant").setDescription("Child name or registration ID").setRequired(true))
+            .addStringOption((o) => o.setName("group").setDescription("Group name or ID").setRequired(true)),
+        )
+        .addSubcommand((sub) =>
+          sub
+            .setName("auto")
+            .setDescription("Auto-bucket unassigned registrants into groups")
+            .addStringOption((o) => o.setName("camp").setDescription("Camp name").setRequired(true))
+            .addIntegerOption((o) => o.setName("size").setDescription("Students per group (default 5)").setMinValue(2).setMaxValue(10).setRequired(false)),
+        )
+        .addSubcommand((sub) =>
+          sub
+            .setName("list")
+            .setDescription("List camp groups")
+            .addStringOption((o) => o.setName("camp").setDescription("Filter by camp").setRequired(false)),
+        )
+        .addSubcommand((sub) =>
+          sub
+            .setName("members")
+            .setDescription("List a group's members")
+            .addStringOption((o) => o.setName("group").setDescription("Group name or ID").setRequired(true)),
+        ),
     ),
 
   new SlashCommandBuilder()
@@ -748,7 +789,10 @@ export const slashCommands = [
           opt.setName("presentation").setDescription("Presentation URL").setRequired(false),
         )
         .addStringOption((opt) =>
-          opt.setName("quiz").setDescription("Quiz URL").setRequired(false),
+          opt.setName("pre_quiz").setDescription("Quiz URL for the start of the lesson").setRequired(false),
+        )
+        .addStringOption((opt) =>
+          opt.setName("post_quiz").setDescription("Quiz URL for the end of the lesson").setRequired(false),
         ),
     ),
 
