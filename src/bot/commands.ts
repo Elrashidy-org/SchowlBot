@@ -682,6 +682,20 @@ export const slashCommands = [
     ),
 
   new SlashCommandBuilder()
+    .setName("course")
+    .setDescription("Manage courses")
+    .addSubcommand((sub) =>
+      sub
+        .setName("add")
+        .setDescription("Add a course")
+        .addStringOption((opt) => opt.setName("name_en").setDescription("Course name (English)").setRequired(true))
+        .addStringOption((opt) => opt.setName("name_ar").setDescription("Course name (Arabic)").setRequired(false))
+        .addIntegerOption((opt) => opt.setName("min_age").setDescription("Minimum age").setRequired(false))
+        .addIntegerOption((opt) => opt.setName("max_age").setDescription("Maximum age").setRequired(false)),
+    )
+    .addSubcommand((sub) => sub.setName("list").setDescription("List all courses")),
+
+  new SlashCommandBuilder()
     .setName("material")
     .setDescription("Manage course material")
     .addSubcommand((sub) =>
@@ -717,7 +731,7 @@ export const slashCommands = [
     .addSubcommand((sub) =>
       sub
         .setName("add")
-        .setDescription("Add or update material")
+        .setDescription("Add or update material for a course lesson")
         .addStringOption((opt) =>
           opt.setName("course").setDescription("Course name or ID").setRequired(true),
         )
@@ -728,7 +742,13 @@ export const slashCommands = [
           opt.setName("title").setDescription("Title").setRequired(true),
         )
         .addStringOption((opt) =>
-          opt.setName("url").setDescription("Resource URL").setRequired(true),
+          opt.setName("url").setDescription("Main resource URL").setRequired(false),
+        )
+        .addStringOption((opt) =>
+          opt.setName("presentation").setDescription("Presentation URL").setRequired(false),
+        )
+        .addStringOption((opt) =>
+          opt.setName("quiz").setDescription("Quiz URL").setRequired(false),
         ),
     ),
 

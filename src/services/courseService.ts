@@ -35,6 +35,26 @@ export function courseLabel(course: Course) {
   return course.name_en || course.name_ar || course.id;
 }
 
+export async function addCourse(input: {
+  nameEn: string;
+  nameAr?: string | null;
+  minAge?: number | null;
+  maxAge?: number | null;
+}) {
+  const { data, error } = await supabase
+    .from("courses")
+    .insert({
+      name_en: input.nameEn,
+      name_ar: input.nameAr || null,
+      min_age: input.minAge ?? null,
+      max_age: input.maxAge ?? null,
+    })
+    .select("id, name_en, name_ar")
+    .single();
+  if (error) throw error;
+  return data as Course;
+}
+
 export async function listCoursesForUpsell(limit = 3) {
   const { data, error } = await supabase
     .from("courses")

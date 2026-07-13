@@ -135,8 +135,13 @@ export const COMMAND_CATALOG: CommandHelp[] = [
     roles: ["owner", "admin", "team_lead"],
   },
   {
+    usage: "/course add|list",
+    description: "Add a course or list all courses.",
+    roles: ["owner", "admin", "team_lead"],
+  },
+  {
     usage: "/material add|remove <course> <lesson> ...",
-    description: "Add, update, or remove course material.",
+    description: "Add material (resource/presentation/quiz URLs) or remove it.",
     roles: ["owner", "admin", "team_lead"],
   },
   {

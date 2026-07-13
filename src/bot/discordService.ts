@@ -79,7 +79,7 @@ import {
   removeAvailability,
   removeTimeOff,
 } from "../services/availabilityService.js";
-import { courseLabel, findCourseByNameOrId } from "../services/courseService.js";
+import { addCourse, courseLabel, findCourseByNameOrId, listCourses } from "../services/courseService.js";
 import { addReferral, listReferrals, rewardReferral } from "../services/referralService.js";
 import { exportCampRegistrations, listCampRegistrations } from "../services/campService.js";
 import { getWeeklySummary } from "../services/summaryService.js";
@@ -622,6 +622,7 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
   if (command === "payment") return handlePaymentCommand(interaction);
   if (command === "camp") return handleCampCommand(interaction);
   if (command === "schedule") return handleScheduleCommand(interaction);
+  if (command === "course") return handleCourseCommand(interaction);
   if (command === "material") return handleMaterialCommand(interaction);
   if (command === "system") return handleSystemCommand(interaction);
   if (command === "config") return handleConfigCommand(interaction);
@@ -2018,6 +2019,35 @@ async function assertCanAccessCourseMaterial(discordUserId: string, course: { id
   return teacher;
 }
 
+async function handleCourseCommand(interaction: ChatInputCommandInteraction) {
+  const sub = interaction.options.getSubcommand();
+  if (sub === "add") {
+    await requireBotRole(interaction.user.id, ["owner", "admin", "team_lead"]);
+    const course = await addCourse({
+      nameEn: interaction.options.getString("name_en", true),
+      nameAr: interaction.options.getString("name_ar"),
+      minAge: interaction.options.getInteger("min_age") ?? undefined,
+      maxAge: interaction.options.getInteger("max_age") ?? undefined,
+    });
+    await interaction.reply({
+      embeds: [okEmbed("Course added", `**${courseLabel(course)}**\nID: \`${course.id}\``)],
+      ephemeral: true,
+    });
+    return;
+  }
+  if (sub === "list") {
+    await requireBotRole(interaction.user.id, ["owner", "admin", "team_lead", "sales", "teacher"]);
+    const rows = await listCourses();
+    await interaction.reply({
+      content: rows.length
+        ? rows.map((c) => `\`${c.id}\` — ${c.name_en || c.name_ar || "-"}`).join("\n").slice(0, 1900)
+        : "No courses.",
+      ephemeral: true,
+    });
+    return;
+  }
+}
+
 async function handleMaterialCommand(interaction: ChatInputCommandInteraction) {
   const sub = interaction.options.getSubcommand();
   const course = await mustFindCourse(interaction.options.getString("course", true));
@@ -2031,14 +2061,30 @@ async function handleMaterialCommand(interaction: ChatInputCommandInteraction) {
       await interaction.reply({ content: "No material found for this course lesson yet.", ephemeral: true });
       return;
     }
-    await interaction.reply({ content: `${material.title_en}\n${material.resource_url || material.attachment_url || "No URL attached."}`, ephemeral: true });
+    const links = [
+      material.resource_url ? `Resource: ${material.resource_url}` : null,
+      material.presentation_url ? `Presentation: ${material.presentation_url}` : null,
+      material.quiz_url ? `Quiz: ${material.quiz_url}` : null,
+      material.attachment_url ? `Attachment: ${material.attachment_url}` : null,
+    ].filter(Boolean);
+    await interaction.reply({
+      content: `**${material.title_en}**\n${links.length ? links.join("\n") : "No URLs attached."}`,
+      ephemeral: true,
+    });
   } else if (sub === "list") {
     await assertCanAccessCourseMaterial(interaction.user.id, course);
     const rows = await listCourseMaterials(course.id);
     await interaction.reply({
       content: rows.length
         ? rows
-            .map((row) => `Lesson ${row.lesson_number}: ${row.title_en}${row.resource_url ? ` — ${row.resource_url}` : ""}`)
+            .map((row) => {
+              const tags = [
+                row.resource_url ? "resource" : null,
+                row.presentation_url ? "slides" : null,
+                row.quiz_url ? "quiz" : null,
+              ].filter(Boolean);
+              return `Lesson ${row.lesson_number}: ${row.title_en}${tags.length ? ` [${tags.join(", ")}]` : ""}`;
+            })
             .join("\n")
             .slice(0, 1900)
         : `No material for ${courseLabel(course)} yet.`,
@@ -2050,9 +2096,11 @@ async function handleMaterialCommand(interaction: ChatInputCommandInteraction) {
       courseId: course.id,
       lessonNumber: interaction.options.getInteger("lesson", true),
       titleEn: interaction.options.getString("title", true),
-      resourceUrl: interaction.options.getString("url", true),
+      resourceUrl: interaction.options.getString("url") || undefined,
+      presentationUrl: interaction.options.getString("presentation") || undefined,
+      quizUrl: interaction.options.getString("quiz") || undefined,
     });
-    await interaction.reply({ content: `Material saved with ID ${material.id}.`, ephemeral: true });
+    await interaction.reply({ content: `Material saved for lesson ${material.lesson_number}.`, ephemeral: true });
   } else if (sub === "remove") {
     await requireBotRole(interaction.user.id, ["owner", "admin", "team_lead"]);
     const removed = await removeMaterial(course.id, interaction.options.getInteger("lesson", true));

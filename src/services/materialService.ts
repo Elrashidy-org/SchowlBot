@@ -29,7 +29,7 @@ export async function requestMaterial(input: {
 export async function listCourseMaterials(courseId: string) {
   const { data, error } = await supabase
     .from("course_material")
-    .select("lesson_number, title_en, resource_url, attachment_url")
+    .select("lesson_number, title_en, resource_url, attachment_url, presentation_url, quiz_url")
     .eq("course_id", courseId)
     .eq("active", true)
     .order("lesson_number", { ascending: true });
@@ -58,6 +58,8 @@ export async function addMaterial(input: {
   description?: string;
   resourceUrl?: string;
   attachmentUrl?: string;
+  presentationUrl?: string;
+  quizUrl?: string;
 }) {
   const { data, error } = await supabase
     .from("course_material")
@@ -70,6 +72,8 @@ export async function addMaterial(input: {
         description: input.description || null,
         resource_url: input.resourceUrl || null,
         attachment_url: input.attachmentUrl || null,
+        presentation_url: input.presentationUrl || null,
+        quiz_url: input.quizUrl || null,
         active: true,
       },
       { onConflict: "course_id,lesson_number" },
