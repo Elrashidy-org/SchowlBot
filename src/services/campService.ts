@@ -149,11 +149,16 @@ export async function listCampGroups(camp?: string) {
 export async function listGroupMembers(groupId: string) {
   const { data, error } = await supabase
     .from("camp_registration")
-    .select("id, child_name, child_age, parent_name, phone_e164")
+    .select("id, child_name, child_age, parent_name, phone_e164, email, language")
     .eq("group_id", groupId)
     .order("created_at", { ascending: true });
   if (error) throw error;
   return data || [];
+}
+
+export async function setGroupChatLink(groupId: string, chatLink: string) {
+  const { error } = await supabase.from("camp_group").update({ chat_link: chatLink }).eq("id", groupId);
+  if (error) throw error;
 }
 
 // Auto-bucket unassigned registrants for a camp into groups of `size`.

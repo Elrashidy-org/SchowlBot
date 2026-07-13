@@ -91,6 +91,7 @@ import {
   listCampGroups,
   listCampRegistrations,
   listGroupMembers,
+  setGroupChatLink,
 } from "../services/campService.js";
 import { getWeeklySummary } from "../services/summaryService.js";
 import {
@@ -1862,6 +1863,36 @@ async function handleCampCommand(interaction: ChatInputCommandInteraction) {
         content: rows.length
           ? rows.map((g) => `\`${g.id.slice(0, 8)}\` | ${g.name} | ${g.members}/${g.capacity}`).join("\n").slice(0, 1900)
           : "No groups yet.",
+        ephemeral: true,
+      });
+      return;
+    }
+    if (sub === "notify") {
+      const grp = await findCampGroup(interaction.options.getString("group", true));
+      if (!grp) throw new Error("Group not found.");
+      const chatLink = interaction.options.getString("chat_link") || grp.chat_link;
+      if (!chatLink) throw new Error("This group has no chat link. Pass `chat_link:` or set it with `/camp group create`.");
+      if (chatLink !== grp.chat_link) await setGroupChatLink(grp.id, chatLink);
+      const members = await listGroupMembers(grp.id);
+      let sent = 0;
+      for (const m of members) {
+        if (!m.email) continue;
+        await sendTemplatedEmail({
+          to: m.email,
+          templateKey: "camp_group_welcome",
+          language: m.language,
+          context: {
+            parent_name: m.parent_name || "",
+            child_name: m.child_name,
+            camp: grp.camp,
+            group_name: grp.name,
+            chat_link: chatLink,
+          },
+        });
+        sent += 1;
+      }
+      await interaction.reply({
+        embeds: [okEmbed("Group notified", `Emailed the welcome + chat link to **${sent}** parent(s) in **${grp.name}**.`)],
         ephemeral: true,
       });
       return;

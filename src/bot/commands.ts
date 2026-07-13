@@ -666,6 +666,13 @@ export const slashCommands = [
             .setName("members")
             .setDescription("List a group's members")
             .addStringOption((o) => o.setName("group").setDescription("Group name or ID").setRequired(true)),
+        )
+        .addSubcommand((sub) =>
+          sub
+            .setName("notify")
+            .setDescription("Email a group's parents the welcome + chat link")
+            .addStringOption((o) => o.setName("group").setDescription("Group name or ID").setRequired(true))
+            .addStringOption((o) => o.setName("chat_link").setDescription("Group chat invite link (updates the group)").setRequired(false)),
         ),
     ),
 
