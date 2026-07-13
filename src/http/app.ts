@@ -5,13 +5,24 @@ import helmet from "helmet";
 import { ZodError } from "zod";
 import { config, isProduction } from "../config.js";
 import { assertSupabaseHealthy } from "../db/supabase.js";
-import { notifyLeadCreated } from "../bot/discordService.js";
+import {
+  notifyCampRegistration,
+  notifyLeadCreated,
+  notifyTeacherTrialAssigned,
+  notifyTrialBooked,
+} from "../bot/discordService.js";
 import { AppError, ValidationError } from "../utils/errors.js";
 import { createLead } from "../services/leadService.js";
-import { mapLegacyLeadPayload } from "../services/leadSchemas.js";
+import { bookingTrialSchema, campRegisterSchema, mapLegacyLeadPayload } from "../services/leadSchemas.js";
 import { isMeetConfigured } from "../services/meetService.js";
 import { supabase } from "../db/supabase.js";
 import { verifyUnsubscribeToken } from "../utils/unsubscribe.js";
+import { listCourses, findCourseByNameOrId, courseLabel } from "../services/courseService.js";
+import { getAvailableSlots } from "../services/bookingService.js";
+import { scheduleTrial } from "../services/scheduleService.js";
+import { registerCamp } from "../services/campService.js";
+import { sendTemplatedEmail } from "../services/emailService.js";
+import { verifyTurnstile } from "../services/turnstileService.js";
 
 export function createHttpApp() {
   const app = express();
@@ -70,6 +81,120 @@ export function createHttpApp() {
       res.send(page("You're unsubscribed", "You won't receive any more emails from Schowl. You can reply to any past email if you change your mind."));
     } catch {
       res.status(500).send(page("Something went wrong", "Please try again later."));
+    }
+  });
+
+  // ---- Booking (own scheduling; replaces Calendly) ----
+
+  app.get("/booking/courses", async (_req, res, next) => {
+    try {
+      const courses = await listCourses();
+      res.json(courses.map((c) => ({ id: c.id, name_en: c.name_en, name_ar: c.name_ar })));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/booking/slots", async (req, res, next) => {
+    try {
+      const course = await findCourseByNameOrId(String(req.query.course || ""));
+      if (!course) {
+        res.status(400).json({ message: "Unknown course" });
+        return;
+      }
+      const days = Math.min(30, Math.max(1, Number(req.query.days) || 14));
+      const slots = await getAvailableSlots(course.id, days);
+      res.json({ course_id: course.id, slots });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post("/booking/trial", leadLimiter, async (req, res, next) => {
+    try {
+      const payload = bookingTrialSchema.parse(req.body);
+      await verifyTurnstile(payload.turnstile_token, req.ip);
+      const course = await findCourseByNameOrId(payload.course);
+      if (!course) throw new ValidationError({ course: "Unknown course" });
+      if (Number.isNaN(new Date(payload.starts_at).getTime())) {
+        throw new ValidationError({ starts_at: "Invalid start time" });
+      }
+
+      const { lead } = await createLead(
+        { ...payload, course_interest: course.name_en || payload.course },
+        req.ip,
+        { skipTurnstile: true },
+      );
+      await notifyLeadCreated(lead);
+
+      try {
+        const lesson = await scheduleTrial({
+          leadId: lead.id,
+          courseId: course.id,
+          startsAt: new Date(payload.starts_at).toISOString(),
+        });
+        await notifyTeacherTrialAssigned({
+          teacherId: lesson.teacher_id,
+          courseLabel: courseLabel(course),
+          startsAt: lesson.scheduled_at,
+          meetingUrl: lesson.meeting_url,
+          leadId: lesson.lead_id,
+          lessonId: lesson.id,
+        });
+        await notifyTrialBooked({
+          childName: lead.child_name,
+          courseLabel: courseLabel(course),
+          startsAt: lesson.scheduled_at,
+          meetingUrl: lesson.meeting_url,
+          lessonId: lesson.id,
+        });
+        res.status(201).json({
+          status: "booked",
+          lead_id: lead.id,
+          lesson_id: lesson.id,
+          scheduled_at: lesson.scheduled_at,
+          meeting_url: lesson.meeting_url,
+        });
+      } catch {
+        // That slot just filled (or no teacher free): the lead is saved for follow-up.
+        res.status(409).json({
+          status: "lead_saved",
+          lead_id: lead.id,
+          message: "That time just filled up — our team will contact you to confirm a slot.",
+        });
+      }
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // ---- Camp registration (separate intake) ----
+
+  app.post("/camp/register", leadLimiter, async (req, res, next) => {
+    try {
+      const payload = campRegisterSchema.parse(req.body);
+      await verifyTurnstile(payload.turnstile_token, req.ip);
+      const reg = await registerCamp(payload);
+
+      if (reg.email) {
+        await sendTemplatedEmail({
+          to: reg.email,
+          templateKey: "camp_registered",
+          language: reg.language,
+          context: { parent_name: reg.parent_name || "", child_name: reg.child_name, camp: reg.camp },
+        });
+      }
+      await notifyCampRegistration({
+        camp: reg.camp,
+        childName: reg.child_name,
+        parentName: reg.parent_name,
+        childAge: reg.child_age,
+        email: reg.email,
+        phone: reg.phone_e164,
+      });
+      res.status(201).json({ status: "registered", id: reg.id });
+    } catch (error) {
+      next(error);
     }
   });
 

@@ -81,6 +81,7 @@ import {
 } from "../services/availabilityService.js";
 import { courseLabel, findCourseByNameOrId } from "../services/courseService.js";
 import { addReferral, listReferrals, rewardReferral } from "../services/referralService.js";
+import { exportCampRegistrations, listCampRegistrations } from "../services/campService.js";
 import { getWeeklySummary } from "../services/summaryService.js";
 import {
   exportPayments,
@@ -242,6 +243,40 @@ export async function notifyTeacherTrialAssigned(input: {
       `Could not DM teacher ${teacher.discord_user_id} about lesson ${input.lessonId}`,
       error,
     );
+  }
+}
+
+// Announce a camp registration to the `camp_registrations` channel(s).
+export async function notifyCampRegistration(input: {
+  camp: string;
+  childName: string;
+  parentName?: string | null;
+  childAge?: number | null;
+  email?: string | null;
+  phone?: string | null;
+}) {
+  if (!client) return;
+  const targets = await resolveChannels("camp_registrations");
+  if (targets.length === 0) return;
+  const embed = new EmbedBuilder()
+    .setTitle(`New camp registration: ${input.camp}`)
+    .setColor(0xffd93d)
+    .addFields(
+      { name: "Child", value: `${input.childName}${input.childAge ? `, ${input.childAge}` : ""}`, inline: true },
+      { name: "Parent", value: input.parentName || "-", inline: true },
+      { name: "Phone", value: input.phone || "-", inline: true },
+      { name: "Email", value: input.email || "-", inline: true },
+    )
+    .setTimestamp(new Date());
+  for (const target of targets) {
+    try {
+      const channel = await client.channels.fetch(target.channelId);
+      if (channel && channel.type === ChannelType.GuildText) {
+        await channel.send({ embeds: [embed] });
+      }
+    } catch (error) {
+      console.error(`Camp registration alert to ${target.channelId} failed`, error);
+    }
   }
 }
 
@@ -585,6 +620,7 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
   if (command === "student") return handleStudentCommand(interaction);
   if (command === "referral") return handleReferralCommand(interaction);
   if (command === "payment") return handlePaymentCommand(interaction);
+  if (command === "camp") return handleCampCommand(interaction);
   if (command === "schedule") return handleScheduleCommand(interaction);
   if (command === "material") return handleMaterialCommand(interaction);
   if (command === "system") return handleSystemCommand(interaction);
@@ -1760,6 +1796,42 @@ async function handlePaymentCommand(interaction: ChatInputCommandInteraction) {
     ].join("\n");
     const file = new AttachmentBuilder(Buffer.from(csv, "utf8"), { name: `payments_last_${days}d.csv` });
     await interaction.reply({ content: `Exported ${rows.length} payments.`, files: [file], ephemeral: true });
+    return;
+  }
+}
+
+async function handleCampCommand(interaction: ChatInputCommandInteraction) {
+  await requireBotRole(interaction.user.id, ["owner", "admin", "team_lead", "sales"]);
+  const sub = interaction.options.getSubcommand();
+  const camp = interaction.options.getString("camp") || undefined;
+
+  if (sub === "list") {
+    const rows = await listCampRegistrations(camp);
+    await interaction.reply({
+      content: rows.length
+        ? rows.map((r) => `${r.created_at.slice(0, 10)} | ${r.camp} | ${r.child_name}${r.child_age ? `, ${r.child_age}` : ""} | ${r.phone_e164 || "-"} | ${r.email || "-"}`).join("\n").slice(0, 1900)
+        : "No camp registrations found.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (sub === "export") {
+    const rows = await exportCampRegistrations(camp);
+    if (rows.length === 0) {
+      await interaction.reply({ content: "No camp registrations to export.", ephemeral: true });
+      return;
+    }
+    const csv = [
+      "created_at,camp,parent_name,child_name,child_age,email,phone,country",
+      ...rows.map((r) =>
+        [r.created_at, r.camp, r.parent_name ?? "", r.child_name, r.child_age ?? "", r.email ?? "", r.phone_e164 ?? "", r.country_iso ?? ""]
+          .map((v) => csvCell(String(v ?? "")))
+          .join(","),
+      ),
+    ].join("\n");
+    const file = new AttachmentBuilder(Buffer.from(csv, "utf8"), { name: `camp_registrations${camp ? `_${camp}` : ""}.csv` });
+    await interaction.reply({ content: `Exported ${rows.length} registrations.`, files: [file], ephemeral: true });
     return;
   }
 }

@@ -9,6 +9,7 @@ export const CHANNEL_PURPOSES = [
   "trial_alerts",
   "system_alerts",
   "daily_digest",
+  "camp_registrations",
 ] as const;
 
 export type ChannelPurpose = (typeof CHANNEL_PURPOSES)[number];

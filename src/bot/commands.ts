@@ -613,6 +613,22 @@ export const slashCommands = [
     ),
 
   new SlashCommandBuilder()
+    .setName("camp")
+    .setDescription("View camp registrations")
+    .addSubcommand((sub) =>
+      sub
+        .setName("list")
+        .setDescription("List recent camp registrations")
+        .addStringOption((opt) => opt.setName("camp").setDescription("Filter by camp name").setRequired(false)),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("export")
+        .setDescription("Export camp registrations as CSV")
+        .addStringOption((opt) => opt.setName("camp").setDescription("Filter by camp name").setRequired(false)),
+    ),
+
+  new SlashCommandBuilder()
     .setName("referral")
     .setDescription("Track referrals and bonuses")
     .addSubcommand((sub) =>
@@ -758,6 +774,7 @@ export const slashCommands = [
                   { name: "trial alerts", value: "trial_alerts" },
                   { name: "system alerts", value: "system_alerts" },
                   { name: "daily digest", value: "daily_digest" },
+                  { name: "camp registrations", value: "camp_registrations" },
                 ),
             )
             .addChannelOption((opt) =>
@@ -785,6 +802,7 @@ export const slashCommands = [
                   { name: "trial alerts", value: "trial_alerts" },
                   { name: "system alerts", value: "system_alerts" },
                   { name: "daily digest", value: "daily_digest" },
+                  { name: "camp registrations", value: "camp_registrations" },
                 ),
             ),
         ),

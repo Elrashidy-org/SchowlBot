@@ -37,6 +37,34 @@ export const leadPayloadSchema = z.object({
 
 export type LeadPayload = z.infer<typeof leadPayloadSchema>;
 
+// A trial booking = a lead + a chosen course and start time.
+export const bookingTrialSchema = leadPayloadSchema.extend({
+  course: z.string().trim().min(1, "Course is required"),
+  starts_at: z.string().trim().min(1, "A start time is required"),
+});
+export type BookingTrialPayload = z.infer<typeof bookingTrialSchema>;
+
+// Camp registration — a separate intake from trials.
+export const campRegisterSchema = z.object({
+  camp: z.string().trim().optional().default("summer"),
+  parent_name: z.string().trim().optional(),
+  child_name: z.string().trim().min(1, "Child name is required"),
+  child_age: z.coerce.number().int().min(4).max(18).optional(),
+  email: z.string().email().optional().or(z.literal("")),
+  phone: z.string().trim().min(1, "Phone is required"),
+  country_iso: z.string().trim().length(2).optional().default("EG"),
+  country_name: z.string().trim().optional().default("Egypt"),
+  language: z.enum(["en", "ar"]).optional().default("en"),
+  notes: z.string().optional(),
+  extra: z.record(z.unknown()).optional().default({}),
+  consent_contact: z.literal(true, {
+    errorMap: () => ({ message: "Contact consent is required" }),
+  }),
+  turnstile_token: z.string().optional(),
+  source: z.string().optional().default("website"),
+});
+export type CampRegisterPayload = z.infer<typeof campRegisterSchema>;
+
 export const legacyLeadPayloadSchema = z.object({
   name: z.string().trim().min(1),
   parent_name: z.string().trim().min(1),

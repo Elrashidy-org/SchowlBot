@@ -120,6 +120,11 @@ export const COMMAND_CATALOG: CommandHelp[] = [
     roles: ["owner", "admin", "team_lead", "sales"],
   },
   {
+    usage: "/camp list|export",
+    description: "View and export camp registrations.",
+    roles: ["owner", "admin", "team_lead", "sales"],
+  },
+  {
     usage: "/schedule teacher|conflicts",
     description: "View a teacher's week agenda or find overlapping lessons.",
     roles: ["owner", "admin", "team_lead", "sales"],
