@@ -35,6 +35,8 @@ export const config = {
   discordSalesRoleId: optional("DISCORD_SALES_ROLE_ID"),
   discordTeacherRoleId: optional("DISCORD_TEACHER_ROLE_ID"),
   turnstileSecretKey: optional("TURNSTILE_SECRET_KEY"),
+  // Bypass Turnstile for local/test runs. Ignored in production (fail-closed).
+  disableTurnstile: optional("DISABLE_TURNSTILE") === "true",
   resendApiKey: optional("RESEND_API_KEY"),
   resendFromEmail: optional("RESEND_FROM_EMAIL", "Schowl <noreply@schowl.com>"),
   emailLogoUrl: optional("EMAIL_LOGO_URL", "https://www.schowl.com/brand/logo-dark.png"),

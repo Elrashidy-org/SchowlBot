@@ -21,6 +21,11 @@ function allowedHostnames(): string[] {
 }
 
 export async function verifyTurnstile(token?: string, remoteIp?: string) {
+  // Explicit test/local bypass — never honored in production.
+  if (config.disableTurnstile && !isProduction()) {
+    return;
+  }
+
   if (!config.turnstileSecretKey) {
     // Fail closed in production: never accept a public lead without bot protection.
     if (isProduction()) {
