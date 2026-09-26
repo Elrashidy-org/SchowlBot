@@ -463,6 +463,7 @@ export const FUNNEL_STATUSES: LeadStatus[] = [
   "trial_booked",
   "trial_done",
   "converted",
+  "nurturing",
   "not_fit",
   "lost",
 ];

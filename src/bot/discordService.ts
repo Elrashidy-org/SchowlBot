@@ -79,7 +79,7 @@ import {
   removeAvailability,
   removeTimeOff,
 } from "../services/availabilityService.js";
-import { addCourse, courseLabel, findCourseByNameOrId, listCourses } from "../services/courseService.js";
+import { addCourse, courseLabel, findCourseByNameOrId, getNextCourse, listCourses, setNextCourse } from "../services/courseService.js";
 import { addReferral, listReferrals, rewardReferral } from "../services/referralService.js";
 import {
   assignToGroup,
@@ -113,6 +113,7 @@ import {
   lessonsRemaining,
   listStudents,
   listLowBalancePackages,
+  listWinbackCandidates,
   setStudentLevel,
 } from "../services/studentService.js";
 import { addMaterial, listCourseMaterials, removeMaterial, requestMaterial } from "../services/materialService.js";
@@ -622,6 +623,7 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
   if (command === "digest") return handleDigestCommand(interaction);
   if (command === "summary") return handleSummaryCommand(interaction);
   if (command === "reengage") return handleReengageCommand(interaction);
+  if (command === "winback") return handleWinbackCommand(interaction);
   if (command === "init") return handleInit(interaction);
   if (command === "lead") return handleLeadCommand(interaction);
   if (command === "teacher") return handleTeacherCommand(interaction);
@@ -819,6 +821,7 @@ async function handleFunnelCommand(interaction: ChatInputCommandInteraction) {
       { name: "Trial booked", value: `${byStatus.trial_booked} (${pct(byStatus.trial_booked)})`, inline: true },
       { name: "Trial done", value: `${byStatus.trial_done} (${pct(byStatus.trial_done)})`, inline: true },
       { name: "Converted", value: `${byStatus.converted} (${pct(byStatus.converted)})`, inline: true },
+      { name: "Nurturing", value: `${byStatus.nurturing} (${pct(byStatus.nurturing)})`, inline: true },
       { name: "Not fit / lost", value: `${byStatus.not_fit + byStatus.lost}`, inline: true },
     )
     .setFooter({ text: `Overall conversion: ${pct(byStatus.converted)}` });
@@ -875,14 +878,46 @@ async function handleReengageCommand(interaction: ChatInputCommandInteraction) {
   }));
   const { error } = await supabase.from("automation_job").insert(jobs);
   if (error) throw error;
+  // Park re-engaged leads in the nurture pool (unless already closed/converted).
+  const toNurture = leads.filter((l) => !["converted", "not_fit", "lost", "nurturing"].includes(l.status));
+  await Promise.all(toNurture.map((l) => updateLeadStatus(l.id, "nurturing").catch(() => {})));
   await interaction.reply({
     embeds: [
       okEmbed(
         "Re-engagement queued",
-        `Queued **${jobs.length}** re-engagement emails to leads with no activity in ${days}+ days. Unsubscribed recipients are skipped automatically.`,
+        `Queued **${jobs.length}** re-engagement emails to leads with no activity in ${days}+ days, and moved ${toNurture.length} into the nurture pool. Unsubscribed recipients are skipped automatically.`,
       ),
     ],
     ephemeral: true,
+  });
+}
+
+async function handleWinbackCommand(interaction: ChatInputCommandInteraction) {
+  await requireBotRole(interaction.user.id, ["owner", "admin", "team_lead", "sales"]);
+  await interaction.deferReply({ ephemeral: true });
+  const candidates = await listWinbackCandidates();
+  if (candidates.length === 0) {
+    await interaction.editReply({ content: "No students to win back — everyone active has lessons left." });
+    return;
+  }
+  let sent = 0;
+  for (const student of candidates) {
+    await sendTemplatedEmail({
+      to: student.email,
+      templateKey: "winback",
+      language: "en",
+      context: { parent_name: student.parent_name || "", child_name: student.name },
+      leadId: student.lead_id,
+    });
+    sent += 1;
+  }
+  await interaction.editReply({
+    embeds: [
+      okEmbed(
+        "Win-back sent",
+        `Emailed **${sent}** lapsed student${sent === 1 ? "" : "s"} (no active package). Unsubscribed parents are skipped automatically.`,
+      ),
+    ],
   });
 }
 
@@ -1429,6 +1464,53 @@ async function handleTrialCommand(interaction: ChatInputCommandInteraction) {
       leadId: lesson.lead_id,
       lessonId: lesson.id,
     });
+  } else if (sub === "reroute") {
+    // Trial didn't fit → try a different course/level and rebook, instead of
+    // marking the lead lost. Keeps the family in the funnel.
+    const leadId = interaction.options.getString("lead_id", true);
+    const course = await mustFindCourse(interaction.options.getString("course", true));
+    const teacherRaw = interaction.options.getString("teacher");
+    const teacher = teacherRaw ? await mustFindTeacher(teacherRaw) : null;
+    const lesson = await scheduleTrial({
+      leadId,
+      courseId: course.id,
+      startsAt: parseDateOption(interaction.options.getString("starts_at", true)),
+      teacherId: teacher?.id,
+      meetingUrl: interaction.options.getString("meeting_url"),
+      assignedByBotUserId: actor?.id,
+    });
+    await updateLeadStatus(
+      leadId,
+      "trial_booked",
+      actor?.id,
+      `Rerouted to ${courseLabel(course)}`,
+    );
+    await interaction.reply({
+      embeds: [
+        okEmbed(
+          "Trial rerouted",
+          `Rebooked into **${courseLabel(course)}** — lesson \`${lesson.id}\` for **${lesson.scheduled_at}**.${lesson.meeting_url ? `\n[Join link](${lesson.meeting_url})` : ""}`,
+        ),
+      ],
+      ephemeral: true,
+    });
+    await notifyTeacherTrialAssigned({
+      teacherId: lesson.teacher_id,
+      courseLabel: courseLabel(course),
+      startsAt: lesson.scheduled_at,
+      meetingUrl: lesson.meeting_url,
+      leadId: lesson.lead_id,
+      lessonId: lesson.id,
+    });
+    const rerouteLead = lesson.lead_id ? await getLead(lesson.lead_id) : null;
+    await notifyTrialBooked({
+      childName: rerouteLead?.child_name || "student",
+      courseLabel: courseLabel(course),
+      startsAt: lesson.scheduled_at,
+      teacherName: teacher?.name,
+      meetingUrl: lesson.meeting_url,
+      lessonId: lesson.id,
+    });
   } else if (sub === "done" || sub === "cancel" || sub === "no-show") {
     const status = sub === "done" ? "completed" : sub === "cancel" ? "cancelled" : "no_show";
     const lesson = await markLessonStatus(interaction.options.getInteger("lesson_id", true), status);
@@ -1513,6 +1595,30 @@ export async function notifyRenewalDue(input: {
       await user.send({ embeds: [embed] });
     } catch (error) {
       console.error(`Renewal DM to owner ${ownerId} failed`, error);
+    }
+  }
+}
+
+// DM the owner(s) when a student finishes their package — the progression /
+// upsell moment.
+export async function notifyPackageComplete(input: { studentName: string; nextCourseName: string | null }) {
+  if (!client) return;
+  const embed = new EmbedBuilder()
+    .setTitle("Package complete — upsell moment")
+    .setColor(0x00b5b5)
+    .setDescription(
+      `**${input.studentName}** just finished their lesson package.\n${
+        input.nextCourseName
+          ? `Suggested next step: **${input.nextCourseName}**. Use \`/student upsell\` to email the parent.`
+          : "No next course is set for their course yet — set one with `/course next`."
+      }`,
+    );
+  for (const ownerId of config.discordOwnerIds) {
+    try {
+      const user = await client.users.fetch(ownerId);
+      await user.send({ embeds: [embed] });
+    } catch (error) {
+      console.error(`Package-complete DM to owner ${ownerId} failed`, error);
     }
   }
 }
@@ -1662,6 +1768,39 @@ async function handleStudentCommand(interaction: ChatInputCommandInteraction) {
       note = sent ? " (emailed to parent)" : " (no parent email on file)";
     }
     await interaction.reply({ content: note ? `Report${note}` : undefined, embeds: [embed], ephemeral: true });
+    return;
+  }
+
+  if (sub === "upsell") {
+    const student = await mustFindStudent(interaction.options.getString("student", true));
+    const next = student.course_id ? await getNextCourse(student.course_id) : null;
+    if (!next) {
+      await interaction.reply({
+        content: "No next course is set for this student's course. Set one with `/course next`.",
+        ephemeral: true,
+      });
+      return;
+    }
+    const wantEmail = interaction.options.getBoolean("email") ?? false;
+    let note = "";
+    if (wantEmail) {
+      if (student.email) {
+        await sendTemplatedEmail({
+          to: student.email,
+          templateKey: "progression_upsell",
+          language: "en",
+          context: { parent_name: student.parent_name || "", child_name: student.name, next_course: courseLabel(next) },
+          leadId: student.lead_id,
+        });
+        note = " (emailed to parent)";
+      } else {
+        note = " (no parent email on file)";
+      }
+    }
+    await interaction.reply({
+      embeds: [okEmbed("Next step suggested", `**${student.name}** → **${courseLabel(next)}**${note}`)],
+      ephemeral: true,
+    });
     return;
   }
 
@@ -2135,6 +2274,21 @@ async function handleCourseCommand(interaction: ChatInputCommandInteraction) {
     });
     await interaction.reply({
       embeds: [okEmbed("Course added", `**${courseLabel(course)}**\nID: \`${course.id}\``)],
+      ephemeral: true,
+    });
+    return;
+  }
+  if (sub === "next") {
+    await requireBotRole(interaction.user.id, ["owner", "admin", "team_lead"]);
+    const course = await mustFindCourse(interaction.options.getString("course", true));
+    const next = await mustFindCourse(interaction.options.getString("next_course", true));
+    if (course.id === next.id) {
+      await interaction.reply({ content: "A course can't progress to itself.", ephemeral: true });
+      return;
+    }
+    await setNextCourse(course.id, next.id);
+    await interaction.reply({
+      embeds: [okEmbed("Progression set", `**${courseLabel(course)}** → **${courseLabel(next)}**`)],
       ephemeral: true,
     });
     return;

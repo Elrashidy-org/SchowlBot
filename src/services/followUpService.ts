@@ -9,6 +9,7 @@ const FOLLOW_UP_HOURS: Record<LeadStatus, number | null> = {
   trial_booked: 24,
   trial_done: 24,
   converted: null,
+  nurturing: null,
   not_fit: null,
   lost: null,
 };

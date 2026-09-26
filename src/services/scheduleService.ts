@@ -515,7 +515,22 @@ export async function completeLesson(input: {
   } else if (data.lesson_type !== "trial" && data.lead_id) {
     // A delivered paid lesson consumes one lesson from the student's package.
     const student = await findStudentByLeadId(data.lead_id);
-    if (student) await consumeLesson(student.id);
+    if (student) {
+      const result = await consumeLesson(student.id);
+      // When the package is fully used up, flag the progression/upsell moment.
+      if (result && result.remaining === 0) {
+        try {
+          const [{ notifyPackageComplete }, { getNextCourse }] = await Promise.all([
+            import("../bot/discordService.js"),
+            import("./courseService.js"),
+          ]);
+          const next = student.course_id ? await getNextCourse(student.course_id) : null;
+          await notifyPackageComplete({ studentName: student.name, nextCourseName: next?.name_en || next?.name_ar || null });
+        } catch (error) {
+          console.error("Package-complete notify failed", error);
+        }
+      }
+    }
   }
   await supabase
     .from("automation_job")

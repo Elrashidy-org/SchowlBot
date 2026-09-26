@@ -85,12 +85,17 @@ export const COMMAND_CATALOG: CommandHelp[] = [
   },
   {
     usage: "/reengage",
-    description: "Email cold leads a re-engagement message (unsubscribed skipped).",
+    description: "Email cold leads a re-engagement message; moves them to the nurture pool (unsubscribed skipped).",
     roles: ["owner", "admin", "team_lead", "sales"],
   },
   {
-    usage: "/trial suggest|schedule|reschedule|done|cancel|no-show",
-    description: "Suggest teachers and manage trial lessons.",
+    usage: "/winback",
+    description: "Email lapsed students (no active package) a win-back message (unsubscribed skipped).",
+    roles: ["owner", "admin", "team_lead", "sales"],
+  },
+  {
+    usage: "/trial suggest|schedule|reschedule|reroute|done|cancel|no-show",
+    description: "Suggest teachers, manage trials, and reroute a lead to a different course.",
     roles: ["owner", "admin", "team_lead", "sales"],
   },
   {
@@ -105,8 +110,8 @@ export const COMMAND_CATALOG: CommandHelp[] = [
     note: "The assigned teacher marks their own session; staff can mark any.",
   },
   {
-    usage: "/student enroll|view|list|level|renew|cancel|renewals|report",
-    description: "Enroll students, track level, manage lesson packages, and share progress reports.",
+    usage: "/student enroll|view|list|level|renew|cancel|renewals|upsell|report",
+    description: "Enroll students, track level, manage lesson packages, suggest the next course, and share progress reports.",
     roles: ["owner", "admin", "team_lead", "sales"],
   },
   {
@@ -135,8 +140,8 @@ export const COMMAND_CATALOG: CommandHelp[] = [
     roles: ["owner", "admin", "team_lead"],
   },
   {
-    usage: "/course add|list",
-    description: "Add a course or list all courses.",
+    usage: "/course add|list|next",
+    description: "Add a course, list courses, or set the next course in the progression.",
     roles: ["owner", "admin", "team_lead"],
   },
   {

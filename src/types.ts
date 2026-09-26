@@ -4,6 +4,7 @@ export type LeadStatus =
   | "trial_booked"
   | "trial_done"
   | "converted"
+  | "nurturing"
   | "not_fit"
   | "lost";
 

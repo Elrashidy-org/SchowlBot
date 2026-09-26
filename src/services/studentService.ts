@@ -290,3 +290,24 @@ export async function markLowBalanceReminded(packageId: string) {
     .update({ low_balance_reminder_sent: true, updated_at: new Date().toISOString() })
     .eq("id", packageId);
 }
+
+// Active students who have run out of lessons (no active package) and have an
+// email — candidates for a manually-triggered win-back campaign.
+export async function listWinbackCandidates(limit = 200) {
+  const { data: students, error } = await supabase
+    .from("student")
+    .select("id, name, parent_name, email, lead_id")
+    .eq("status", "active")
+    .not("email", "is", null)
+    .limit(limit);
+  if (error) throw error;
+  const rows = students || [];
+  if (rows.length === 0) return [];
+  const { data: pkgs } = await supabase
+    .from("student_package")
+    .select("student_id")
+    .eq("status", "active")
+    .in("student_id", rows.map((s) => s.id));
+  const stillActive = new Set((pkgs || []).map((p) => p.student_id));
+  return rows.filter((s) => !stillActive.has(s.id));
+}

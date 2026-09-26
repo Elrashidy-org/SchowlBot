@@ -36,6 +36,10 @@ export const slashCommands = [
     ),
 
   new SlashCommandBuilder()
+    .setName("winback")
+    .setDescription("Email lapsed students (no active package) a win-back message"),
+
+  new SlashCommandBuilder()
     .setName("init")
     .setDescription("Initialize your SchowlBot profile")
     .addSubcommand((sub) =>
@@ -100,6 +104,7 @@ export const slashCommands = [
               { name: "trial_booked", value: "trial_booked" },
               { name: "trial_done", value: "trial_done" },
               { name: "converted", value: "converted" },
+              { name: "nurturing", value: "nurturing" },
               { name: "not_fit", value: "not_fit" },
               { name: "lost", value: "lost" },
             ),
@@ -428,6 +433,26 @@ export const slashCommands = [
         .addIntegerOption((opt) =>
           opt.setName("lesson_id").setDescription("Lesson ID").setRequired(true),
         ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("reroute")
+        .setDescription("Trial didn't fit — rebook the lead into a different course")
+        .addStringOption((opt) =>
+          opt.setName("lead_id").setDescription("Lead ID").setRequired(true),
+        )
+        .addStringOption((opt) =>
+          opt.setName("course").setDescription("New course name or ID").setRequired(true),
+        )
+        .addStringOption((opt) =>
+          opt.setName("starts_at").setDescription("ISO date/time").setRequired(true),
+        )
+        .addStringOption((opt) =>
+          opt.setName("teacher").setDescription("Optional teacher mention or ID").setRequired(false),
+        )
+        .addStringOption((opt) =>
+          opt.setName("meeting_url").setDescription("Meeting link").setRequired(false),
+        ),
     ),
 
   new SlashCommandBuilder()
@@ -549,6 +574,13 @@ export const slashCommands = [
     )
     .addSubcommand((sub) =>
       sub.setName("renewals").setDescription("Show students whose lessons are running low"),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName("upsell")
+        .setDescription("Suggest (and optionally email) the next course for a student")
+        .addStringOption((opt) => opt.setName("student").setDescription("Name or student ID").setRequired(true))
+        .addBooleanOption((opt) => opt.setName("email").setDescription("Also email the parent the suggestion").setRequired(false)),
     )
     .addSubcommand((sub) =>
       sub
@@ -741,7 +773,14 @@ export const slashCommands = [
         .addIntegerOption((opt) => opt.setName("min_age").setDescription("Minimum age").setRequired(false))
         .addIntegerOption((opt) => opt.setName("max_age").setDescription("Maximum age").setRequired(false)),
     )
-    .addSubcommand((sub) => sub.setName("list").setDescription("List all courses")),
+    .addSubcommand((sub) => sub.setName("list").setDescription("List all courses"))
+    .addSubcommand((sub) =>
+      sub
+        .setName("next")
+        .setDescription("Set the course a student progresses to next (for upsells)")
+        .addStringOption((opt) => opt.setName("course").setDescription("Course name or ID").setRequired(true))
+        .addStringOption((opt) => opt.setName("next_course").setDescription("Next course name or ID").setRequired(true)),
+    ),
 
   new SlashCommandBuilder()
     .setName("material")

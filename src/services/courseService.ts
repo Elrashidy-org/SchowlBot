@@ -35,6 +35,34 @@ export function courseLabel(course: Course) {
   return course.name_en || course.name_ar || course.id;
 }
 
+// Set the course a student naturally progresses to next (for upsells).
+export async function setNextCourse(courseId: string, nextCourseId: string) {
+  const { error } = await supabase
+    .from("courses")
+    .update({ next_course_id: nextCourseId })
+    .eq("id", courseId);
+  if (error) throw error;
+}
+
+// The next course in the progression, if one has been configured.
+export async function getNextCourse(courseId: string): Promise<Course | null> {
+  const { data, error } = await supabase
+    .from("courses")
+    .select("next_course_id")
+    .eq("id", courseId)
+    .maybeSingle();
+  if (error) throw error;
+  const nextId = (data as { next_course_id: string | null } | null)?.next_course_id;
+  if (!nextId) return null;
+  const { data: next, error: nextErr } = await supabase
+    .from("courses")
+    .select("id, name_en, name_ar")
+    .eq("id", nextId)
+    .maybeSingle();
+  if (nextErr) throw nextErr;
+  return (next as Course | null) ?? null;
+}
+
 export async function addCourse(input: {
   nameEn: string;
   nameAr?: string | null;
