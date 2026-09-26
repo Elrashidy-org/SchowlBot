@@ -59,6 +59,7 @@ export function createHttpApp() {
         resend_configured: Boolean(config.resendApiKey),
         turnstile_configured: Boolean(config.turnstileSecretKey),
         google_meet_configured: isMeetConfigured(),
+        cors_allowed_origins: config.corsAllowedOrigins,
       });
     } catch (error) {
       next(error);
