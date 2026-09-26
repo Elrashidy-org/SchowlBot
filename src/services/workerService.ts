@@ -11,11 +11,10 @@ import {
 import { sendTemplatedEmail } from "./emailService.js";
 import {
   getStudentById,
-  listRenewalsNeedingReminder,
-  markRenewalReminded,
+  lessonsRemaining,
+  listPackagesNeedingLowBalanceReminder,
+  markLowBalanceReminded,
 } from "./studentService.js";
-
-const RENEWAL_REMINDER_DAYS = 7;
 
 // Post the daily digest once per day, after ~08:00 Cairo (≈06:00 UTC).
 let lastDigestDate = "";
@@ -27,42 +26,42 @@ function maybePostDigest() {
   void postDailyDigest().catch((error) => console.error("Daily digest failed", error));
 }
 
-// Once per day, remind owners (and parents) about upcoming membership renewals.
+// Once per day, remind owners (and parents) when a package is running low.
 let lastRenewalDate = "";
 function maybeRunRenewals() {
   const now = new Date();
   const day = now.toISOString().slice(0, 10);
   if (lastRenewalDate === day || now.getUTCHours() < 6) return;
   lastRenewalDate = day;
-  void runRenewalReminders().catch((error) => console.error("Renewal reminders failed", error));
+  void runLowBalanceReminders().catch((error) => console.error("Low-balance reminders failed", error));
 }
 
-async function runRenewalReminders() {
-  const due = await listRenewalsNeedingReminder(RENEWAL_REMINDER_DAYS);
-  for (const membership of due) {
-    const student = await getStudentById(membership.student_id);
+async function runLowBalanceReminders() {
+  const due = await listPackagesNeedingLowBalanceReminder();
+  for (const pkg of due) {
+    const student = await getStudentById(pkg.student_id);
     if (!student) continue;
+    const remaining = lessonsRemaining(pkg);
     await notifyRenewalDue({
       name: student.name,
-      renewsOn: membership.renews_on,
-      plan: membership.plan,
-      price: membership.price,
-      currency: membership.currency,
+      lessonsRemaining: remaining,
+      price: pkg.price,
+      currency: pkg.currency,
     });
     if (student.email) {
       await sendTemplatedEmail({
         to: student.email,
-        templateKey: "membership_renewal",
+        templateKey: "lessons_running_low",
         language: "en",
         context: {
           parent_name: student.parent_name || "",
           child_name: student.name,
-          renews_on: membership.renews_on,
+          lessons_remaining: remaining,
         },
         leadId: student.lead_id,
       });
     }
-    await markRenewalReminded(membership.id);
+    await markLowBalanceReminded(pkg.id);
   }
 }
 

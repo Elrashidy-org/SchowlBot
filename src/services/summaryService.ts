@@ -1,8 +1,8 @@
 import { supabase } from "../db/supabase.js";
-import { countUpcomingRenewals } from "./studentService.js";
+import { countLowBalancePackages } from "./studentService.js";
 
 // Weekly business summary: pipeline movement, sessions delivered, teacher fill
-// rate (lessons this week / total weekly capacity), and upcoming renewals.
+// rate (lessons this week / total weekly capacity), and packages running low.
 export async function getWeeklySummary() {
   const since = new Date(Date.now() - 7 * 86400000).toISOString();
   const nowIso = new Date().toISOString();
@@ -15,7 +15,7 @@ export async function getWeeklySummary() {
       .eq("new_status", status)
       .gte("created_at", since);
 
-  const [newLeads, trialsBooked, conversions, sessionsDelivered, lessonsThisWeekRes, capacityRes, renewals] =
+  const [newLeads, trialsBooked, conversions, sessionsDelivered, lessonsThisWeekRes, capacityRes, lowBalance] =
     await Promise.all([
       leadCount().gte("created_at", since),
       activityCount("trial_booked"),
@@ -33,7 +33,7 @@ export async function getWeeklySummary() {
         .gte("scheduled_at", since)
         .lte("scheduled_at", nowIso),
       supabase.from("teacher").select("max_weekly_lessons").eq("active", true).eq("status", "active"),
-      countUpcomingRenewals(7),
+      countLowBalancePackages(),
     ]);
 
   const capacity = (capacityRes.data || []).reduce(
@@ -51,6 +51,6 @@ export async function getWeeklySummary() {
     lessonsThisWeek,
     capacity,
     fillRate,
-    upcomingRenewals: renewals,
+    lowBalancePackages: lowBalance,
   };
 }

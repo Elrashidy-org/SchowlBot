@@ -98,20 +98,21 @@ import {
   exportPayments,
   getRevenue,
   getStudentPaidTotal,
-  listOutstandingMemberships,
+  listOutstandingPackages,
   listPayments,
   recordPayment,
 } from "../services/paymentService.js";
 import { sendStudentReport, sendTemplatedEmail } from "../services/emailService.js";
 import {
+  addLessons,
   cancelStudent,
   enrollStudent,
   findStudent,
-  getActiveMembership,
-  countUpcomingRenewals,
+  getActivePackage,
+  countLowBalancePackages,
+  lessonsRemaining,
   listStudents,
-  listUpcomingRenewals,
-  renewMembership,
+  listLowBalancePackages,
   setStudentLevel,
 } from "../services/studentService.js";
 import { addMaterial, listCourseMaterials, removeMaterial, requestMaterial } from "../services/materialService.js";
@@ -445,7 +446,7 @@ function okEmbed(title: string, description?: string) {
 
 function digestEmbed(
   stats: { newToday: number; convertedToday: number; trialsToday: number; due: number },
-  renewals: number,
+  runningLow: number,
 ) {
   return new EmbedBuilder()
     .setTitle("Schowl daily digest")
@@ -456,7 +457,7 @@ function digestEmbed(
       { name: "Conversions today", value: String(stats.convertedToday), inline: true },
       { name: "Trials today", value: String(stats.trialsToday), inline: true },
       { name: "Follow-ups due now", value: String(stats.due), inline: true },
-      { name: "Renewals (next 7d)", value: String(renewals), inline: true },
+      { name: "Packages running low", value: String(runningLow), inline: true },
     );
 }
 
@@ -466,7 +467,7 @@ export async function postDailyDigest() {
   const targets = await resolveChannels("daily_digest");
   if (targets.length === 0) return;
   const stats = await getDigestStats();
-  const embed = digestEmbed(stats, await countUpcomingRenewals(7));
+  const embed = digestEmbed(stats, await countLowBalancePackages());
   for (const target of targets) {
     try {
       const channel = await client.channels.fetch(target.channelId);
@@ -827,7 +828,7 @@ async function handleFunnelCommand(interaction: ChatInputCommandInteraction) {
 async function handleDigestCommand(interaction: ChatInputCommandInteraction) {
   await requireBotRole(interaction.user.id, ["owner", "admin", "team_lead", "sales"]);
   const stats = await getDigestStats();
-  await interaction.reply({ embeds: [digestEmbed(stats, await countUpcomingRenewals(7))], ephemeral: true });
+  await interaction.reply({ embeds: [digestEmbed(stats, await countLowBalancePackages())], ephemeral: true });
 }
 
 async function handleSummaryCommand(interaction: ChatInputCommandInteraction) {
@@ -850,7 +851,7 @@ async function handleSummaryCommand(interaction: ChatInputCommandInteraction) {
         value: s.fillRate != null ? `${s.fillRate}% (${s.lessonsThisWeek}/${s.capacity})` : "n/a",
         inline: true,
       },
-      { name: "Renewals (next 7d)", value: String(s.upcomingRenewals), inline: true },
+      { name: "Packages running low", value: String(s.lowBalancePackages), inline: true },
       { name: "Revenue", value: revenueText, inline: true },
     );
   await interaction.reply({ embeds: [embed], ephemeral: true });
@@ -1485,32 +1486,23 @@ async function mustFindStudent(value: string) {
   return student;
 }
 
-function parseDateOnly(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    throw new Error("Date must be in YYYY-MM-DD format, e.g. 2026-08-01.");
-  }
-  return value.slice(0, 10);
-}
 
-// DM the owner(s) when a membership renewal is coming up.
+// DM the owner(s) when a student's package is running low on lessons.
 export async function notifyRenewalDue(input: {
   name: string;
-  renewsOn: string;
-  plan: string;
+  lessonsRemaining: number;
   price?: number | null;
   currency?: string;
 }) {
   if (!client) return;
   const embed = new EmbedBuilder()
-    .setTitle("Membership renewal due")
+    .setTitle("Package running low")
     .setColor(0xf5a623)
     .addFields(
       { name: "Student", value: input.name, inline: true },
-      { name: "Renews", value: input.renewsOn, inline: true },
-      { name: "Plan", value: input.plan, inline: true },
+      { name: "Lessons left", value: String(input.lessonsRemaining), inline: true },
       {
-        name: "Price",
+        name: "Last price",
         value: input.price != null ? `${input.price} ${input.currency || "EGP"}` : "-",
         inline: true,
       },
@@ -1533,23 +1525,21 @@ async function handleStudentCommand(interaction: ChatInputCommandInteraction) {
     const course = await mustFindCourse(interaction.options.getString("course", true));
     const teacherRaw = interaction.options.getString("teacher");
     const teacher = teacherRaw ? await mustFindTeacher(teacherRaw) : null;
-    const renewsOn = parseDateOnly(interaction.options.getString("renews_on", true));
-    const { student, membership } = await enrollStudent({
+    const { student, pkg } = await enrollStudent({
       leadId: interaction.options.getString("lead_id") || undefined,
       name: interaction.options.getString("name") || undefined,
       courseId: course.id,
       track: interaction.options.getString("track"),
       level: interaction.options.getString("level"),
       teacherId: teacher?.id,
-      plan: interaction.options.getString("plan") || undefined,
+      lessons: interaction.options.getInteger("lessons", true),
       price: interaction.options.getNumber("price") ?? undefined,
-      renewsOn,
     });
     await interaction.reply({
       embeds: [
         okEmbed(
           "Student enrolled",
-          `**${student.name}** enrolled in ${courseLabel(course)}. Membership renews **${membership.renews_on}**.\nStudent ID: \`${student.id}\``,
+          `**${student.name}** enrolled in ${courseLabel(course)} with a **${pkg.lessons_purchased}-lesson** package.\nStudent ID: \`${student.id}\``,
         ),
       ],
       ephemeral: true,
@@ -1559,7 +1549,7 @@ async function handleStudentCommand(interaction: ChatInputCommandInteraction) {
 
   if (sub === "view") {
     const student = await mustFindStudent(interaction.options.getString("student", true));
-    const membership = await getActiveMembership(student.id);
+    const pkg = await getActivePackage(student.id);
     const course = student.course_id ? await findCourseByNameOrId(student.course_id) : null;
     const paid = await getStudentPaidTotal(student.id);
     const embed = new EmbedBuilder()
@@ -1573,9 +1563,9 @@ async function handleStudentCommand(interaction: ChatInputCommandInteraction) {
         { name: "Parent", value: student.parent_name || "-", inline: true },
         { name: "Phone", value: student.phone_e164 || "-", inline: true },
         {
-          name: "Membership",
-          value: membership
-            ? `${membership.plan} · renews **${membership.renews_on}**${membership.price != null ? ` · ${membership.price} ${membership.currency}` : ""}`
+          name: "Package",
+          value: pkg
+            ? `**${lessonsRemaining(pkg)}** of ${pkg.lessons_purchased} lessons left${pkg.price != null ? ` · ${pkg.price} ${pkg.currency}` : ""}`
             : "none",
           inline: false,
         },
@@ -1614,10 +1604,11 @@ async function handleStudentCommand(interaction: ChatInputCommandInteraction) {
 
   if (sub === "renew") {
     const student = await mustFindStudent(interaction.options.getString("student", true));
-    const months = interaction.options.getInteger("months") ?? 1;
-    const membership = await renewMembership(student.id, months);
+    const lessons = interaction.options.getInteger("lessons", true);
+    const price = interaction.options.getNumber("price") ?? undefined;
+    const pkg = await addLessons(student.id, lessons, price);
     await interaction.reply({
-      embeds: [okEmbed("Membership renewed", `**${student.name}**'s membership now renews **${membership.renews_on}**.`)],
+      embeds: [okEmbed("Package renewed", `Added **${lessons}** lessons for **${student.name}** — now **${lessonsRemaining(pkg)}** lessons left.`)],
       ephemeral: true,
     });
     return;
@@ -1675,19 +1666,19 @@ async function handleStudentCommand(interaction: ChatInputCommandInteraction) {
   }
 
   if (sub === "renewals") {
-    const rows = await listUpcomingRenewals(30);
+    const rows = await listLowBalancePackages();
     await interaction.reply({
       embeds: [
         new EmbedBuilder()
-          .setTitle("Upcoming renewals (30 days)")
+          .setTitle("Packages running low")
           .setColor(0x00b5b5)
           .setDescription(
             rows.length
               ? rows
-                  .map((r) => `**${r.renews_on}** — ${r.name} (${r.plan}${r.price != null ? `, ${r.price} ${r.currency}` : ""})`)
+                  .map((r) => `**${r.remaining} left** — ${r.name} (${r.lessons_purchased}-lesson package${r.price != null ? `, ${r.price} ${r.currency}` : ""})`)
                   .join("\n")
                   .slice(0, 4000)
-              : "No renewals in the next 30 days.",
+              : "No students are running low on lessons.",
           ),
       ],
       ephemeral: true,
@@ -1703,12 +1694,12 @@ async function handlePaymentCommand(interaction: ChatInputCommandInteraction) {
 
   if (sub === "record") {
     const student = await mustFindStudent(interaction.options.getString("student", true));
-    const months = interaction.options.getInteger("months") ?? undefined;
-    const { payment, renewedTo } = await recordPayment({
+    const lessons = interaction.options.getInteger("lessons") ?? undefined;
+    const { payment, lessonsRemainingAfter } = await recordPayment({
       studentId: student.id,
       amount: interaction.options.getNumber("amount", true),
       method: interaction.options.getString("method") || undefined,
-      months,
+      lessons,
       notes: interaction.options.getString("notes"),
       recordedByBotUserId: actor?.id,
     });
@@ -1717,7 +1708,7 @@ async function handlePaymentCommand(interaction: ChatInputCommandInteraction) {
     const sendReceipt = interaction.options.getBoolean("receipt") ?? true;
     let receiptNote = "";
     if (sendReceipt && student.email) {
-      const renewsOn = renewedTo || (await getActiveMembership(student.id))?.renews_on || "-";
+      const remaining = lessonsRemainingAfter ?? lessonsRemaining((await getActivePackage(student.id)) ?? { lessons_purchased: 0, lessons_used: 0 });
       await sendTemplatedEmail({
         to: student.email,
         templateKey: "payment_receipt",
@@ -1727,7 +1718,7 @@ async function handlePaymentCommand(interaction: ChatInputCommandInteraction) {
           child_name: student.name,
           amount: payment.amount,
           currency: payment.currency,
-          renews_on: renewsOn,
+          lessons_remaining: remaining,
         },
         leadId: student.lead_id,
       });
@@ -1739,7 +1730,7 @@ async function handlePaymentCommand(interaction: ChatInputCommandInteraction) {
         okEmbed(
           "Payment recorded",
           `**${payment.amount} ${payment.currency}** from **${student.name}** via ${payment.method}.${
-            renewedTo ? `\nMembership renewed — now paid through **${renewedTo}**.` : ""
+            lessonsRemainingAfter != null ? `\nAdded lessons — now **${lessonsRemainingAfter}** left.` : ""
           }${receiptNote}`,
         ),
       ],
@@ -1773,21 +1764,20 @@ async function handlePaymentCommand(interaction: ChatInputCommandInteraction) {
   }
 
   if (sub === "outstanding") {
-    const days = interaction.options.getInteger("days") ?? 3;
-    const rows = await listOutstandingMemberships(days);
-    const today = new Date().toISOString().slice(0, 10);
+    const threshold = interaction.options.getInteger("threshold") ?? 2;
+    const rows = await listOutstandingPackages(threshold);
     await interaction.reply({
       embeds: [
         new EmbedBuilder()
-          .setTitle(`Outstanding (due within ${days}d)`)
+          .setTitle(`Running low (${threshold} lessons or fewer)`)
           .setColor(0xf5a623)
           .setDescription(
             rows.length
               ? rows
-                  .map((r) => `${r.renews_on <= today ? "⚠️ " : ""}**${r.renews_on}** — ${r.name} (${r.plan}${r.price != null ? `, ${r.price} ${r.currency}` : ""})`)
+                  .map((r) => `${r.remaining === 0 ? "⚠️ " : ""}**${r.remaining} left** — ${r.name} (${r.lessons_purchased}-lesson package${r.price != null ? `, ${r.price} ${r.currency}` : ""})`)
                   .join("\n")
                   .slice(0, 4000)
-              : "Nobody is due — all paid up.",
+              : "Nobody is running low — all topped up.",
           ),
       ],
       ephemeral: true,

@@ -106,7 +106,7 @@ export const COMMAND_CATALOG: CommandHelp[] = [
   },
   {
     usage: "/student enroll|view|list|level|renew|cancel|renewals|report",
-    description: "Enroll students, track level, manage memberships, and share progress reports.",
+    description: "Enroll students, track level, manage lesson packages, and share progress reports.",
     roles: ["owner", "admin", "team_lead", "sales"],
   },
   {
@@ -116,7 +116,7 @@ export const COMMAND_CATALOG: CommandHelp[] = [
   },
   {
     usage: "/payment record|list|revenue|outstanding|export",
-    description: "Record payments (with receipts), report revenue, see who owes, export CSV.",
+    description: "Record payments (with receipts), report revenue, see who's running low, export CSV.",
     roles: ["owner", "admin", "team_lead", "sales"],
   },
   {

@@ -1,5 +1,5 @@
 import { supabase } from "../db/supabase.js";
-import { getActiveMembership, renewMembership } from "./studentService.js";
+import { addLessons, getActivePackage, lessonsRemaining, listLowBalancePackages } from "./studentService.js";
 
 export interface Payment {
   id: string;
@@ -11,8 +11,8 @@ export interface Payment {
   notes: string | null;
 }
 
-// Record a payment; if `months` is given, also renew the membership by that many
-// months (this is what makes a student "paid through" a future date).
+// Record a payment; if `lessons` is given, also top up the student's package by
+// that many lessons (this is what makes a student "paid up" for more sessions).
 export async function recordPayment(input: {
   studentId: string;
   amount: number;
@@ -20,15 +20,25 @@ export async function recordPayment(input: {
   method?: string;
   paidOn?: string;
   notes?: string | null;
-  months?: number;
+  lessons?: number;
   recordedByBotUserId?: string;
 }) {
-  const membership = await getActiveMembership(input.studentId);
+  // Top up first so the payment links to the resulting package.
+  let lessonsRemainingAfter: number | null = null;
+  let packageId: string | null = null;
+  if (input.lessons && input.lessons > 0) {
+    const pkg = await addLessons(input.studentId, input.lessons, null);
+    lessonsRemainingAfter = lessonsRemaining(pkg);
+    packageId = pkg.id;
+  } else {
+    packageId = (await getActivePackage(input.studentId))?.id ?? null;
+  }
+
   const { data, error } = await supabase
     .from("payment")
     .insert({
       student_id: input.studentId,
-      membership_id: membership?.id ?? null,
+      package_id: packageId,
       amount: input.amount,
       currency: input.currency || "EGP",
       method: input.method || "cash",
@@ -40,12 +50,7 @@ export async function recordPayment(input: {
     .single();
   if (error) throw error;
 
-  let renewedTo: string | null = null;
-  if (input.months && input.months > 0) {
-    const m = await renewMembership(input.studentId, input.months);
-    renewedTo = m.renews_on;
-  }
-  return { payment: data as Payment, renewedTo };
+  return { payment: data as Payment, lessonsRemainingAfter };
 }
 
 export async function listPayments(studentId?: string, limit = 15) {
@@ -77,26 +82,10 @@ export async function getRevenue(days: number) {
   return totals;
 }
 
-// Active memberships due within `days` (renews_on <= cutoff) — i.e. who owes.
-export async function listOutstandingMemberships(days: number) {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() + days);
-  const { data: ms, error } = await supabase
-    .from("membership")
-    .select("student_id, renews_on, price, currency, plan")
-    .eq("status", "active")
-    .lte("renews_on", cutoff.toISOString().slice(0, 10))
-    .order("renews_on", { ascending: true })
-    .limit(50);
-  if (error) throw error;
-  const rows = ms || [];
-  const ids = [...new Set(rows.map((r) => r.student_id).filter(Boolean))];
-  const names = new Map<string, string>();
-  if (ids.length) {
-    const { data } = await supabase.from("student").select("id, name").in("id", ids);
-    for (const s of data || []) names.set(s.id, s.name);
-  }
-  return rows.map((r) => ({ ...r, name: r.student_id ? names.get(r.student_id) ?? r.student_id : "-" }));
+// Students whose active package is running low (<= threshold lessons left) —
+// i.e. who should be asked to renew/pay for the next package.
+export async function listOutstandingPackages(threshold: number) {
+  return listLowBalancePackages(threshold);
 }
 
 export async function exportPayments(days: number) {

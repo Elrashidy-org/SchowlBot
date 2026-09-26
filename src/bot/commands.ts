@@ -504,21 +504,20 @@ export const slashCommands = [
     .addSubcommand((sub) =>
       sub
         .setName("enroll")
-        .setDescription("Enroll a student and open a membership")
+        .setDescription("Enroll a student and open a lesson package")
         .addStringOption((opt) => opt.setName("course").setDescription("Course name or ID").setRequired(true))
-        .addStringOption((opt) => opt.setName("renews_on").setDescription("Renewal date YYYY-MM-DD").setRequired(true))
+        .addIntegerOption((opt) => opt.setName("lessons").setDescription("Lessons in the package (e.g. 4, 8, 16)").setMinValue(1).setMaxValue(200).setRequired(true))
         .addStringOption((opt) => opt.setName("lead_id").setDescription("Lead to enroll from").setRequired(false))
         .addStringOption((opt) => opt.setName("name").setDescription("Student name (if no lead)").setRequired(false))
         .addStringOption((opt) => opt.setName("track").setDescription("Track within the course").setRequired(false))
         .addStringOption((opt) => opt.setName("level").setDescription("Current level").setRequired(false))
         .addStringOption((opt) => opt.setName("teacher").setDescription("Assigned teacher mention or ID").setRequired(false))
-        .addStringOption((opt) => opt.setName("plan").setDescription("Plan (e.g. monthly)").setRequired(false))
-        .addNumberOption((opt) => opt.setName("price").setDescription("Price").setRequired(false)),
+        .addNumberOption((opt) => opt.setName("price").setDescription("Package price").setRequired(false)),
     )
     .addSubcommand((sub) =>
       sub
         .setName("view")
-        .setDescription("View a student and their membership")
+        .setDescription("View a student and their lesson package")
         .addStringOption((opt) => opt.setName("student").setDescription("Name or student ID").setRequired(true)),
     )
     .addSubcommand((sub) =>
@@ -537,18 +536,19 @@ export const slashCommands = [
     .addSubcommand((sub) =>
       sub
         .setName("renew")
-        .setDescription("Renew a student's membership")
+        .setDescription("Add lessons to a student's package")
         .addStringOption((opt) => opt.setName("student").setDescription("Name or student ID").setRequired(true))
-        .addIntegerOption((opt) => opt.setName("months").setDescription("Months to extend (default 1)").setMinValue(1).setMaxValue(24).setRequired(false)),
+        .addIntegerOption((opt) => opt.setName("lessons").setDescription("Lessons to add (e.g. 4, 8, 16)").setMinValue(1).setMaxValue(200).setRequired(true))
+        .addNumberOption((opt) => opt.setName("price").setDescription("Package price").setRequired(false)),
     )
     .addSubcommand((sub) =>
       sub
         .setName("cancel")
-        .setDescription("Cancel a student's membership")
+        .setDescription("Cancel a student's package")
         .addStringOption((opt) => opt.setName("student").setDescription("Name or student ID").setRequired(true)),
     )
     .addSubcommand((sub) =>
-      sub.setName("renewals").setDescription("Show upcoming membership renewals"),
+      sub.setName("renewals").setDescription("Show students whose lessons are running low"),
     )
     .addSubcommand((sub) =>
       sub
@@ -564,7 +564,7 @@ export const slashCommands = [
     .addSubcommand((sub) =>
       sub
         .setName("record")
-        .setDescription("Record a payment (optionally renew the membership)")
+        .setDescription("Record a payment (optionally add lessons)")
         .addStringOption((opt) => opt.setName("student").setDescription("Name or student ID").setRequired(true))
         .addNumberOption((opt) => opt.setName("amount").setDescription("Amount paid").setRequired(true))
         .addStringOption((opt) =>
@@ -582,7 +582,7 @@ export const slashCommands = [
             ),
         )
         .addIntegerOption((opt) =>
-          opt.setName("months").setDescription("Renew membership by N months").setMinValue(1).setMaxValue(24).setRequired(false),
+          opt.setName("lessons").setDescription("Add N lessons to the package").setMinValue(1).setMaxValue(200).setRequired(false),
         )
         .addBooleanOption((opt) => opt.setName("receipt").setDescription("Email the parent a receipt (default yes)").setRequired(false))
         .addStringOption((opt) => opt.setName("notes").setDescription("Notes").setRequired(false)),
@@ -602,8 +602,8 @@ export const slashCommands = [
     .addSubcommand((sub) =>
       sub
         .setName("outstanding")
-        .setDescription("Students who owe (membership due soon or overdue)")
-        .addIntegerOption((opt) => opt.setName("days").setDescription("Due within N days (default 3)").setMinValue(0).setMaxValue(60).setRequired(false)),
+        .setDescription("Students running low on lessons (renewal due)")
+        .addIntegerOption((opt) => opt.setName("threshold").setDescription("Lessons left or fewer (default 2)").setMinValue(0).setMaxValue(20).setRequired(false)),
     )
     .addSubcommand((sub) =>
       sub

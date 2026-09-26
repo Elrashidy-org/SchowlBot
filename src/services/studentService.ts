@@ -19,18 +19,27 @@ export interface Student {
   assigned_teacher_id: string | null;
 }
 
-export interface Membership {
+// A prepaid bundle of lessons (e.g. 4 / 8 / 16). Schowl sells lessons, not time.
+export interface StudentPackage {
   id: string;
   student_id: string;
-  plan: string;
-  starts_on: string;
-  renews_on: string;
+  lessons_purchased: number;
+  lessons_used: number;
   price: number | null;
   currency: string;
   status: string;
+  low_balance_reminder_sent: boolean;
+  purchased_on: string;
 }
 
-// Enroll a student (optionally from a lead) and open their first membership.
+export function lessonsRemaining(pkg: Pick<StudentPackage, "lessons_purchased" | "lessons_used">) {
+  return Math.max(0, pkg.lessons_purchased - pkg.lessons_used);
+}
+
+// Reminder fires when a student's package drops to this many lessons left.
+export const LOW_BALANCE_THRESHOLD = 2;
+
+// Enroll a student (optionally from a lead) and open their first lesson package.
 export async function enrollStudent(input: {
   leadId?: string | null;
   name?: string;
@@ -41,9 +50,8 @@ export async function enrollStudent(input: {
   track?: string | null;
   level?: string | null;
   teacherId?: string | null;
-  plan?: string;
+  lessons: number;
   price?: number | null;
-  renewsOn: string;
 }) {
   let name = input.name;
   let parentName = input.parentName;
@@ -77,12 +85,11 @@ export async function enrollStudent(input: {
     .single();
   if (error) throw error;
 
-  const { data: membership, error: mErr } = await supabase
-    .from("membership")
+  const { data: pkg, error: mErr } = await supabase
+    .from("student_package")
     .insert({
       student_id: student.id,
-      plan: input.plan || "monthly",
-      renews_on: input.renewsOn,
+      lessons_purchased: Math.max(1, Math.trunc(input.lessons)),
       price: input.price ?? null,
       status: "active",
     })
@@ -98,7 +105,7 @@ export async function enrollStudent(input: {
     }
   }
 
-  return { student: student as Student, membership: membership as Membership };
+  return { student: student as Student, pkg: pkg as StudentPackage };
 }
 
 export async function getStudentById(id: string) {
@@ -136,17 +143,29 @@ export async function listStudents(page = 1) {
   return data || [];
 }
 
-export async function getActiveMembership(studentId: string) {
+export async function findStudentByLeadId(leadId: string) {
   const { data, error } = await supabase
-    .from("membership")
+    .from("student")
     .select("*")
-    .eq("student_id", studentId)
-    .eq("status", "active")
-    .order("renews_on", { ascending: false })
+    .eq("lead_id", leadId)
+    .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (error) throw error;
-  return (data as Membership | null) ?? null;
+  return (data as Student | null) ?? null;
+}
+
+export async function getActivePackage(studentId: string) {
+  const { data, error } = await supabase
+    .from("student_package")
+    .select("*")
+    .eq("student_id", studentId)
+    .eq("status", "active")
+    .order("purchased_on", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as StudentPackage | null) ?? null;
 }
 
 export async function setStudentLevel(studentId: string, level: string) {
@@ -160,26 +179,60 @@ export async function setStudentLevel(studentId: string, level: string) {
   return data as Student;
 }
 
-// Advance the active membership's renewal date by `months` and reset reminders.
-export async function renewMembership(studentId: string, months = 1) {
-  const membership = await getActiveMembership(studentId);
-  if (!membership) throw new Error("No active membership to renew.");
-  const base = new Date(membership.renews_on);
-  base.setMonth(base.getMonth() + Math.max(1, Math.trunc(months)));
-  const nextRenewsOn = base.toISOString().slice(0, 10);
+// Renew = buy more lessons. Tops up the active package if there is one (and
+// clears the low-balance flag); otherwise opens a fresh package.
+export async function addLessons(studentId: string, lessons: number, price?: number | null) {
+  const add = Math.max(1, Math.trunc(lessons));
+  const active = await getActivePackage(studentId);
+  if (active) {
+    const { data, error } = await supabase
+      .from("student_package")
+      .update({
+        lessons_purchased: active.lessons_purchased + add,
+        price: price ?? active.price,
+        low_balance_reminder_sent: false,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", active.id)
+      .select("*")
+      .single();
+    if (error) throw error;
+    return data as StudentPackage;
+  }
   const { data, error } = await supabase
-    .from("membership")
-    .update({ renews_on: nextRenewsOn, last_renewal_reminder_on: null, updated_at: new Date().toISOString() })
-    .eq("id", membership.id)
+    .from("student_package")
+    .insert({ student_id: studentId, lessons_purchased: add, price: price ?? null, status: "active" })
     .select("*")
     .single();
   if (error) throw error;
-  return data as Membership;
+  return data as StudentPackage;
+}
+
+// Consume one lesson from a student's active package (called when a paid lesson
+// is delivered). Returns the updated remaining count, or null if no package.
+export async function consumeLesson(studentId: string) {
+  const active = await getActivePackage(studentId);
+  if (!active) return null;
+  const used = active.lessons_used + 1;
+  const depleted = used >= active.lessons_purchased;
+  const { data, error } = await supabase
+    .from("student_package")
+    .update({
+      lessons_used: used,
+      status: depleted ? "completed" : "active",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", active.id)
+    .select("*")
+    .single();
+  if (error) throw error;
+  const pkg = data as StudentPackage;
+  return { pkg, remaining: lessonsRemaining(pkg) };
 }
 
 export async function cancelStudent(studentId: string) {
   await supabase
-    .from("membership")
+    .from("student_package")
     .update({ status: "cancelled", updated_at: new Date().toISOString() })
     .eq("student_id", studentId)
     .eq("status", "active");
@@ -193,59 +246,47 @@ export async function cancelStudent(studentId: string) {
   return data as Student;
 }
 
-// Active memberships renewing within `days`, that haven't been reminded this cycle.
-export async function listRenewalsNeedingReminder(days: number) {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() + days);
-  const cutoffIso = cutoff.toISOString().slice(0, 10);
+// Active packages at or below the low-balance threshold that haven't been
+// reminded yet — the "2 lessons left" nudge.
+export async function listPackagesNeedingLowBalanceReminder() {
   const { data, error } = await supabase
-    .from("membership")
-    .select("id, student_id, plan, renews_on, price, currency, last_renewal_reminder_on, auto_reminders")
+    .from("student_package")
+    .select("id, student_id, lessons_purchased, lessons_used, price, currency")
     .eq("status", "active")
-    .eq("auto_reminders", true)
-    .lte("renews_on", cutoffIso)
-    .order("renews_on", { ascending: true });
+    .eq("low_balance_reminder_sent", false);
   if (error) throw error;
-  const today = new Date().toISOString().slice(0, 10);
-  return (data || []).filter((m) => !m.last_renewal_reminder_on || m.last_renewal_reminder_on < today);
+  return (data || []).filter(
+    (p) => lessonsRemaining(p) <= LOW_BALANCE_THRESHOLD,
+  ) as Array<Pick<StudentPackage, "id" | "student_id" | "lessons_purchased" | "lessons_used" | "price" | "currency">>;
 }
 
-export async function listUpcomingRenewals(days: number) {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() + days);
-  const { data: ms, error } = await supabase
-    .from("membership")
-    .select("student_id, renews_on, plan, price, currency")
+// Active packages running low, for staff review (`/student renewals`).
+export async function listLowBalancePackages(threshold = LOW_BALANCE_THRESHOLD) {
+  const { data, error } = await supabase
+    .from("student_package")
+    .select("student_id, lessons_purchased, lessons_used, price, currency")
     .eq("status", "active")
-    .lte("renews_on", cutoff.toISOString().slice(0, 10))
-    .order("renews_on", { ascending: true })
-    .limit(25);
+    .limit(200);
   if (error) throw error;
-  const rows = ms || [];
+  const rows = (data || []).filter((p) => lessonsRemaining(p) <= threshold);
   const ids = [...new Set(rows.map((r) => r.student_id))];
   const names = new Map<string, string>();
   if (ids.length) {
-    const { data } = await supabase.from("student").select("id, name").in("id", ids);
-    for (const s of data || []) names.set(s.id, s.name);
+    const { data: students } = await supabase.from("student").select("id, name").in("id", ids);
+    for (const s of students || []) names.set(s.id, s.name);
   }
-  return rows.map((r) => ({ ...r, name: names.get(r.student_id) || r.student_id }));
+  return rows
+    .map((r) => ({ ...r, name: names.get(r.student_id) || r.student_id, remaining: lessonsRemaining(r) }))
+    .sort((a, b) => a.remaining - b.remaining);
 }
 
-export async function countUpcomingRenewals(days: number) {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() + days);
-  const { count, error } = await supabase
-    .from("membership")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "active")
-    .lte("renews_on", cutoff.toISOString().slice(0, 10));
-  if (error) throw error;
-  return count ?? 0;
+export async function countLowBalancePackages(threshold = LOW_BALANCE_THRESHOLD) {
+  return (await listLowBalancePackages(threshold)).length;
 }
 
-export async function markRenewalReminded(membershipId: string) {
+export async function markLowBalanceReminded(packageId: string) {
   await supabase
-    .from("membership")
-    .update({ last_renewal_reminder_on: new Date().toISOString().slice(0, 10) })
-    .eq("id", membershipId);
+    .from("student_package")
+    .update({ low_balance_reminder_sent: true, updated_at: new Date().toISOString() })
+    .eq("id", packageId);
 }

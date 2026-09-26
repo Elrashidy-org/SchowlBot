@@ -1,6 +1,7 @@
 import { supabase } from "../db/supabase.js";
 import { config } from "../config.js";
 import { getLead, updateLeadStatus } from "./leadService.js";
+import { consumeLesson, findStudentByLeadId } from "./studentService.js";
 import { createMeetEvent, isMeetConfigured } from "./meetService.js";
 
 // Use the provided meeting link, otherwise auto-generate a Google Meet link
@@ -511,6 +512,10 @@ export async function completeLesson(input: {
 
   if (data.lesson_type === "trial" && data.lead_id) {
     await updateLeadStatus(data.lead_id, "trial_done");
+  } else if (data.lesson_type !== "trial" && data.lead_id) {
+    // A delivered paid lesson consumes one lesson from the student's package.
+    const student = await findStudentByLeadId(data.lead_id);
+    if (student) await consumeLesson(student.id);
   }
   await supabase
     .from("automation_job")
