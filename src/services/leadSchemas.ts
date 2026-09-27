@@ -37,16 +37,51 @@ export const leadPayloadSchema = z.object({
   event_id: z.string().optional(),
   fbp: z.string().optional(),
   fbc: z.string().optional(),
+  // Which plan card the parent clicked, e.g. "one_on_one_8" / "group_4".
+  package_interest: z.string().optional(),
+  // PDPL marketing consent from the cookie banner — gates Meta CAPI.
+  consent_marketing: z.boolean().optional().default(false),
 });
 
 export type LeadPayload = z.infer<typeof leadPayloadSchema>;
 
-// A trial booking = a lead + a chosen course and start time.
+// A trial booking = a lead + a chosen course and start time. Optionally carries
+// the partial-booking session so an abandoned booking is converted, not doubled.
 export const bookingTrialSchema = leadPayloadSchema.extend({
   course: z.string().trim().min(1, "Course is required"),
   starts_at: z.string().trim().min(1, "A start time is required"),
+  session_id: z.string().optional(),
+  lead_id: z.string().optional(),
 });
 export type BookingTrialPayload = z.infer<typeof bookingTrialSchema>;
+
+// Partial booking — a started-but-not-finished trial. Almost everything optional;
+// only a session id and a phone are required. Upserted by session_id.
+export const leadStartSchema = z.object({
+  session_id: z.string().trim().min(1, "session_id is required"),
+  phone: z.string().trim().min(1, "Phone is required"),
+  country_iso: z.string().trim().length(2).optional(),
+  country_name: z.string().trim().optional(),
+  child_name: z.string().trim().optional(),
+  parent_name: z.string().trim().optional(),
+  child_age: z.coerce.number().int().min(4).max(18).optional(),
+  email: z.string().email().optional().or(z.literal("")),
+  language: z.enum(["en", "ar"]).optional().default("en"),
+  course: z.string().optional(),
+  starts_at: z.string().optional(),
+  package_interest: z.string().optional(),
+  quiz_answers: z.record(z.unknown()).optional().default({}),
+  quiz_recommendation: z.string().optional(),
+  landing_page: z.string().optional(),
+  referrer: z.string().optional(),
+  utm_source: z.string().optional(),
+  utm_medium: z.string().optional(),
+  utm_campaign: z.string().optional(),
+  utm_term: z.string().optional(),
+  utm_content: z.string().optional(),
+  consent_marketing: z.boolean().optional().default(false),
+});
+export type LeadStartPayload = z.infer<typeof leadStartSchema>;
 
 // Camp registration — a separate intake from trials.
 export const campRegisterSchema = z.object({
@@ -69,6 +104,7 @@ export const campRegisterSchema = z.object({
   event_id: z.string().optional(),
   fbp: z.string().optional(),
   fbc: z.string().optional(),
+  consent_marketing: z.boolean().optional().default(false),
 });
 export type CampRegisterPayload = z.infer<typeof campRegisterSchema>;
 
@@ -137,5 +173,6 @@ export function mapLegacyLeadPayload(input: unknown): LeadPayload {
     quiz_recommendation: undefined,
     referrer: undefined,
     source: "website",
+    consent_marketing: false,
   };
 }

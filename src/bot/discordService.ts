@@ -332,6 +332,47 @@ export async function notifyTrialBooked(input: {
   }
 }
 
+// Alert the team about a started-but-abandoned booking, with a WhatsApp link to
+// the parent so a rep can follow up in one click.
+export async function notifyAbandonedBooking(input: {
+  childName?: string | null;
+  parentName?: string | null;
+  phoneE164?: string | null;
+  courseLabel?: string | null;
+  packageInterest?: string | null;
+  sessionId: string;
+}) {
+  if (!client) return;
+  const targets = await resolveChannels("trial_alerts");
+  if (targets.length === 0) return;
+  const waMessage = `Hi${input.parentName ? " " + input.parentName : ""}! This is Schowl — it looks like you started booking a free trial${
+    input.childName ? " for " + input.childName : ""
+  } but didn't finish. Would you like help picking a time?`;
+  const wa = input.phoneE164 ? buildWhatsAppLink(input.phoneE164, waMessage) : null;
+  const embed = new EmbedBuilder()
+    .setTitle("Abandoned booking — follow up")
+    .setColor(0xf5a623)
+    .setDescription(wa ? `[Message the parent on WhatsApp](${wa})` : "No phone captured")
+    .addFields(
+      { name: "Parent", value: input.parentName || "-", inline: true },
+      { name: "Child", value: input.childName || "-", inline: true },
+      { name: "Phone", value: input.phoneE164 || "-", inline: true },
+      { name: "Course", value: input.courseLabel || "-", inline: true },
+      { name: "Plan interest", value: input.packageInterest || "-", inline: true },
+    )
+    .setFooter({ text: `Session: ${input.sessionId}` });
+  for (const target of targets) {
+    try {
+      const channel = await client.channels.fetch(target.channelId);
+      if (channel && channel.type === ChannelType.GuildText) {
+        await channel.send({ embeds: [embed] });
+      }
+    } catch (error) {
+      console.error(`Abandoned booking alert to ${target.channelId} failed`, error);
+    }
+  }
+}
+
 // Post a teacher application to the configured `teacher_applications` channel(s)
 // so admins can review and approve/reject.
 export async function notifyTeacherApplication(input: {
@@ -526,9 +567,19 @@ function leadEmbed(lead: ClientLead, whatsappUrl?: string, ownerLabel?: string |
       { name: "Email", value: lead.email || "-", inline: true },
       { name: "Owner", value: ownerLabel || "unassigned", inline: true },
       { name: "Source", value: lead.source || "-", inline: true },
+      { name: "Plan interest", value: lead.package_interest || "-", inline: true },
+      { name: "Quiz", value: formatQuiz(lead.quiz_answers), inline: false },
     )
     .setFooter({ text: `Lead ID: ${lead.id}` })
     .setTimestamp(new Date(lead.created_at));
+}
+
+// Compact one-line render of the quiz answers {age, experience, interest, goal}.
+function formatQuiz(answers: Record<string, unknown> | null | undefined) {
+  if (!answers || typeof answers !== "object") return "-";
+  const entries = Object.entries(answers).filter(([, v]) => v != null && v !== "");
+  if (entries.length === 0) return "-";
+  return entries.map(([k, v]) => `${k}: ${String(v)}`).join(" · ").slice(0, 1000);
 }
 
 // Resolve a lead's current assignee to a Discord mention + display label.

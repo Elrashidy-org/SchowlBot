@@ -1,7 +1,9 @@
 import { supabase } from "../db/supabase.js";
+import { config } from "../config.js";
 import { ClientLead } from "../types.js";
 import { sendLeadEmail } from "./emailService.js";
 import {
+  notifyAbandonedBooking,
   notifyLeadSlaBreached,
   notifyRenewalDue,
   notifySystemAlert,
@@ -9,6 +11,9 @@ import {
   sendDirectMessage,
 } from "../bot/discordService.js";
 import { sendTemplatedEmail } from "./emailService.js";
+import { buildIcs, supportWhatsappLine } from "../utils/emailExtras.js";
+import { findCourseByNameOrId, courseLabel } from "./courseService.js";
+import { listAbandonedBookingSessions, markBookingSessionAlerted } from "./bookingSessionService.js";
 import {
   getStudentById,
   lessonsRemaining,
@@ -65,6 +70,44 @@ async function runLowBalanceReminders() {
   }
 }
 
+// Nudge started-but-abandoned bookings: alert the team (WhatsApp link) and, if we
+// have their email, send a "finish your booking" nudge. Guarded by alerted_at.
+async function runAbandonedSweep() {
+  const sessions = await listAbandonedBookingSessions(config.bookingAbandonMinutes);
+  for (const s of sessions) {
+    let label: string | null = null;
+    if (s.course_id) {
+      try {
+        const course = await findCourseByNameOrId(s.course_id);
+        label = course ? courseLabel(course) : null;
+      } catch {
+        // course lookup is best-effort
+      }
+    }
+    await notifyAbandonedBooking({
+      childName: s.child_name,
+      parentName: s.parent_name,
+      phoneE164: s.phone_e164,
+      courseLabel: label,
+      packageInterest: s.package_interest,
+      sessionId: s.session_id,
+    });
+    if (s.email) {
+      await sendTemplatedEmail({
+        to: s.email,
+        templateKey: "booking_abandoned",
+        language: s.language,
+        context: {
+          parent_name: s.parent_name || "",
+          child_name: s.child_name || "your child",
+          whatsapp_line: supportWhatsappLine(s.language),
+        },
+      });
+    }
+    await markBookingSessionAlerted(s.id);
+  }
+}
+
 let workerTimer: NodeJS.Timeout | null = null;
 
 function safeTick() {
@@ -92,6 +135,11 @@ export function stopAutomationWorker() {
 async function runAutomationTick() {
   maybePostDigest();
   maybeRunRenewals();
+  try {
+    await runAbandonedSweep();
+  } catch (error) {
+    console.error("Abandoned booking sweep failed", error);
+  }
 
   const { data: jobs, error } = await supabase
     .from("automation_job")
@@ -107,7 +155,7 @@ async function runAutomationTick() {
   }
 }
 
-async function runJob(job: { id: number; job_type: string; lead_id: string | null; payload: Record<string, unknown>; attempts: number }) {
+async function runJob(job: { id: number; job_type: string; lead_id: string | null; lesson_id?: number | null; payload: Record<string, unknown>; attempts: number }) {
   // Atomically claim the job: only the worker that flips it from pending->running
   // proceeds, so multiple instances can't double-process the same job.
   const { data: claimed, error: claimError } = await supabase
@@ -140,7 +188,16 @@ async function runJob(job: { id: number; job_type: string; lead_id: string | nul
         job.payload?.context && typeof job.payload.context === "object"
           ? (job.payload.context as Record<string, string | number | null | undefined>)
           : {};
-      await sendLeadEmail(lead as ClientLead, job.payload.template, context);
+      // Attach a calendar invite when the job carries .ics details (trial confirmation).
+      let attachments: { filename: string; content: string }[] | undefined;
+      const ics = job.payload?.ics as
+        | { summary: string; startsAt: string; endsAt: string; url?: string }
+        | undefined;
+      if (ics?.startsAt && ics?.endsAt) {
+        const text = buildIcs({ uid: `trial-${job.lesson_id ?? job.id}@schowl`, ...ics });
+        attachments = [{ filename: "schowl-trial.ics", content: Buffer.from(text, "utf-8").toString("base64") }];
+      }
+      await sendLeadEmail(lead as ClientLead, job.payload.template, context, attachments);
     }
 
     await supabase

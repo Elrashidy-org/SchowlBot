@@ -14,7 +14,8 @@ import {
 } from "../bot/discordService.js";
 import { AppError, ValidationError } from "../utils/errors.js";
 import { createLead } from "../services/leadService.js";
-import { bookingTrialSchema, campRegisterSchema, mapLegacyLeadPayload } from "../services/leadSchemas.js";
+import { bookingTrialSchema, campRegisterSchema, leadStartSchema, mapLegacyLeadPayload } from "../services/leadSchemas.js";
+import { markBookingSessionBooked, upsertBookingSession } from "../services/bookingSessionService.js";
 import { isMeetConfigured } from "../services/meetService.js";
 import { supabase } from "../db/supabase.js";
 import { verifyUnsubscribeToken } from "../utils/unsubscribe.js";
@@ -65,6 +66,16 @@ export function createHttpApp() {
     standardHeaders: true,
     legacyHeaders: false,
     message: { message: "Too many submissions. Please try again later." },
+  });
+
+  // Partial bookings are called repeatedly as the parent fills the form, so a
+  // looser limit than the final submit.
+  const leadStartLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { message: "Too many requests. Please try again later." },
   });
 
   app.get("/health", async (_req, res, next) => {
@@ -167,6 +178,19 @@ export function createHttpApp() {
     }
   });
 
+  // Partial / abandoned booking capture. Public, looser limit, NO Turnstile
+  // (the single-use token is reserved for the final /booking/trial submit).
+  app.post("/booking/lead-start", leadStartLimiter, async (req, res, next) => {
+    try {
+      const payload = leadStartSchema.parse(req.body);
+      const course = payload.course ? await findCourseByNameOrId(payload.course) : null;
+      const session = await upsertBookingSession(payload, course?.id ?? null);
+      res.status(201).json({ lead_id: session.id });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.post("/booking/trial", leadLimiter, async (req, res, next) => {
     try {
       const payload = bookingTrialSchema.parse(req.body);
@@ -229,21 +253,32 @@ export function createHttpApp() {
         console.error("Trial notifications failed", error);
       }
 
-      const trialSource = payload.landing_page || req.get("referer") || undefined;
-      const trackBase = {
-        eventId: payload.event_id,
-        email: lead.email,
-        phone: lead.phone_e164,
-        firstName: lead.parent_name,
-        country: lead.country_iso,
-        fbp: payload.fbp,
-        fbc: payload.fbc,
-        clientIp: req.ip,
-        userAgent: req.get("user-agent"),
-        sourceUrl: trialSource,
-      };
-      void sendMetaEvent({ eventName: "Lead", ...trackBase });
-      void sendMetaEvent({ eventName: "Schedule", ...trackBase });
+      // Convert the partial booking (if any) so it isn't nudged as abandoned.
+      if (payload.session_id || payload.lead_id) {
+        try {
+          await markBookingSessionBooked({ sessionId: payload.session_id, id: payload.lead_id }, lead.id);
+        } catch (error) {
+          console.error("Marking booking_session booked failed", error);
+        }
+      }
+
+      if (payload.consent_marketing) {
+        const trialSource = payload.landing_page || req.get("referer") || undefined;
+        const trackBase = {
+          eventId: payload.event_id,
+          email: lead.email,
+          phone: lead.phone_e164,
+          firstName: lead.parent_name,
+          country: lead.country_iso,
+          fbp: payload.fbp,
+          fbc: payload.fbc,
+          clientIp: req.ip,
+          userAgent: req.get("user-agent"),
+          sourceUrl: trialSource,
+        };
+        void sendMetaEvent({ eventName: "Lead", ...trackBase });
+        void sendMetaEvent({ eventName: "Schedule", ...trackBase });
+      }
 
       res.status(201).json({
         status: "booked",
@@ -309,19 +344,21 @@ export function createHttpApp() {
         email: reg.email,
         phone: reg.phone_e164,
       });
-      void sendMetaEvent({
-        eventName: "CompleteRegistration",
-        eventId: payload.event_id,
-        email: reg.email,
-        phone: reg.phone_e164,
-        firstName: reg.parent_name,
-        country: reg.country_iso,
-        fbp: payload.fbp,
-        fbc: payload.fbc,
-        clientIp: req.ip,
-        userAgent: req.get("user-agent"),
-        sourceUrl: req.get("referer") || undefined,
-      });
+      if (payload.consent_marketing) {
+        void sendMetaEvent({
+          eventName: "CompleteRegistration",
+          eventId: payload.event_id,
+          email: reg.email,
+          phone: reg.phone_e164,
+          firstName: reg.parent_name,
+          country: reg.country_iso,
+          fbp: payload.fbp,
+          fbc: payload.fbc,
+          clientIp: req.ip,
+          userAgent: req.get("user-agent"),
+          sourceUrl: req.get("referer") || undefined,
+        });
+      }
 
       res.status(201).json({ status: "registered", id: reg.id });
     } catch (error) {
@@ -335,20 +372,28 @@ export function createHttpApp() {
       if (!result.duplicate) {
         await notifyLeadCreated(result.lead);
       }
-      const t = (req.body ?? {}) as { event_id?: string; fbp?: string; fbc?: string; landing_page?: string };
-      void sendMetaEvent({
-        eventName: "Lead",
-        eventId: t.event_id,
-        email: result.lead.email,
-        phone: result.lead.phone_e164,
-        firstName: result.lead.parent_name,
-        country: result.lead.country_iso,
-        fbp: t.fbp,
-        fbc: t.fbc,
-        clientIp: req.ip,
-        userAgent: req.get("user-agent"),
-        sourceUrl: t.landing_page || req.get("referer") || undefined,
-      });
+      const t = (req.body ?? {}) as {
+        event_id?: string;
+        fbp?: string;
+        fbc?: string;
+        landing_page?: string;
+        consent_marketing?: boolean;
+      };
+      if (t.consent_marketing) {
+        void sendMetaEvent({
+          eventName: "Lead",
+          eventId: t.event_id,
+          email: result.lead.email,
+          phone: result.lead.phone_e164,
+          firstName: result.lead.parent_name,
+          country: result.lead.country_iso,
+          fbp: t.fbp,
+          fbc: t.fbc,
+          clientIp: req.ip,
+          userAgent: req.get("user-agent"),
+          sourceUrl: t.landing_page || req.get("referer") || undefined,
+        });
+      }
       res.status(201).json({
         lead_id: result.lead.id,
         status: "received",

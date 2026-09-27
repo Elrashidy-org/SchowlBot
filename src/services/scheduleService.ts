@@ -2,6 +2,7 @@ import { supabase } from "../db/supabase.js";
 import { config } from "../config.js";
 import { getLead, updateLeadStatus } from "./leadService.js";
 import { consumeLesson, findStudentByLeadId } from "./studentService.js";
+import { supportWhatsappLine } from "../utils/emailExtras.js";
 import { createMeetEvent, isMeetConfigured } from "./meetService.js";
 
 // Use the provided meeting link, otherwise auto-generate a Google Meet link
@@ -59,18 +60,32 @@ async function enqueueTrialJobs(input: {
   lessonId: number;
   teacherId: string | null;
   startsAt: string;
+  endsAt: string;
+  language?: string | null;
   meetingUrl?: string | null;
 }) {
   const teacher = input.teacherId
     ? await getTeacherContact(input.teacherId)
     : { name: null as string | null, email: null as string | null, discordUserId: null as string | null };
+  const lang = input.language === "ar" ? "ar" : "en";
+  const teacherLine = teacher.name ? (lang === "ar" ? ` مع ${teacher.name}` : ` with ${teacher.name}`) : "";
   const context = {
     scheduled_at: formatScheduledAt(input.startsAt),
     teacher_name: teacher.name ?? "your Schowl teacher",
+    teacher_line: teacherLine,
+    whatsapp_line: supportWhatsappLine(lang),
     meeting_url: input.meetingUrl || "the link we will share before the lesson",
   };
+  const ics = {
+    summary: `Schowl trial — ${input.childName}`,
+    startsAt: input.startsAt,
+    endsAt: input.endsAt,
+    url: input.meetingUrl || undefined,
+  };
   const now = new Date();
-  const reminderAt = new Date(new Date(input.startsAt).getTime() - 24 * 60 * 60_000);
+  const startMs = new Date(input.startsAt).getTime();
+  const remind24 = new Date(startMs - 24 * 60 * 60_000);
+  const remind1 = new Date(startMs - 60 * 60_000);
 
   const jobs: {
     job_type: string;
@@ -84,16 +99,16 @@ async function enqueueTrialJobs(input: {
       lead_id: input.leadId,
       lesson_id: input.lessonId,
       run_at: now.toISOString(),
-      payload: { template: "trial_booked", context },
+      payload: { template: "trial_booked", context, ics },
     },
   ];
 
-  if (reminderAt.getTime() > now.getTime()) {
+  if (remind24.getTime() > now.getTime()) {
     jobs.push({
       job_type: "trial_reminder_24h",
       lead_id: input.leadId,
       lesson_id: input.lessonId,
-      run_at: reminderAt.toISOString(),
+      run_at: remind24.toISOString(),
       payload: { template: "trial_reminder_24h", context },
     });
     if (teacher.discordUserId) {
@@ -101,13 +116,23 @@ async function enqueueTrialJobs(input: {
         job_type: "teacher_trial_reminder",
         lead_id: input.leadId,
         lesson_id: input.lessonId,
-        run_at: reminderAt.toISOString(),
+        run_at: remind24.toISOString(),
         payload: {
           dm_discord_user_id: teacher.discordUserId,
           message: `Reminder: your Schowl trial with ${input.childName} is in ~24h — ${context.scheduled_at}. Meeting: ${context.meeting_url}`,
         },
       });
     }
+  }
+
+  if (remind1.getTime() > now.getTime()) {
+    jobs.push({
+      job_type: "trial_reminder_1h",
+      lead_id: input.leadId,
+      lesson_id: input.lessonId,
+      run_at: remind1.toISOString(),
+      payload: { template: "trial_reminder_1h", context },
+    });
   }
 
   const { error } = await supabase.from("automation_job").insert(jobs);
@@ -200,6 +225,8 @@ export async function scheduleTrial(input: {
     lessonId: data.id,
     teacherId,
     startsAt: input.startsAt,
+    endsAt,
+    language: lead.language,
     meetingUrl,
   });
 
@@ -249,13 +276,15 @@ export async function rescheduleTrial(input: {
     .eq("status", "pending");
 
   let childName = "the student";
+  let language: string | null = null;
   if (updated.lead_id) {
     const { data: lead } = await supabase
       .from("client_lead")
-      .select("child_name")
+      .select("child_name, language")
       .eq("id", updated.lead_id)
       .maybeSingle();
     if (lead?.child_name) childName = lead.child_name;
+    language = (lead?.language as string | null) ?? null;
   }
 
   await enqueueTrialJobs({
@@ -264,6 +293,8 @@ export async function rescheduleTrial(input: {
     lessonId: updated.id,
     teacherId,
     startsAt: input.startsAt,
+    endsAt,
+    language,
     meetingUrl: (updated.meeting_url as string | null) ?? null,
   });
 

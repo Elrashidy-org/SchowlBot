@@ -149,6 +149,8 @@ export async function createLead(
       privacy_policy_accepted: payload.privacy_policy_accepted,
       email: payload.email || null,
       course_interest: payload.course_interest || null,
+      package_interest: payload.package_interest || null,
+      consent_marketing: payload.consent_marketing ?? false,
       quiz_answers: payload.quiz_answers,
       quiz_recommendation: payload.quiz_recommendation || null,
       first_touch_utm: utm,

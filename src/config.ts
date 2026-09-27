@@ -47,6 +47,10 @@ export const config = {
   leadSlaHours: Number(optional("LEAD_SLA_HOURS", "2")),
   // Trial slots within this many minutes of now are hidden (booking lead time).
   trialLeadMinutes: Number(optional("TRIAL_LEAD_MINUTES", "720")),
+  // A started-but-not-booked trial older than this (minutes) is nudged as abandoned.
+  bookingAbandonMinutes: Number(optional("BOOKING_ABANDON_MINUTES", "30")),
+  // Schowl's support WhatsApp number (E.164); adds a contact link to emails. Optional.
+  supportWhatsapp: optional("SUPPORT_WHATSAPP_E164"),
   autoAssignLeads: optional("AUTO_ASSIGN_LEADS", "true") !== "false",
   googleClientId: optional("GOOGLE_CLIENT_ID"),
   googleClientSecret: optional("GOOGLE_CLIENT_SECRET"),

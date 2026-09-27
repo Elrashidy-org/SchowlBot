@@ -37,7 +37,10 @@ export interface ClientLead {
   preferred_contact: string;
   email: string | null;
   course_interest: string | null;
+  package_interest: string | null;
   quiz_recommendation: string | null;
+  quiz_answers: Record<string, unknown> | null;
+  consent_marketing: boolean | null;
   referrer: string | null;
   source: string | null;
   notes: string | null;

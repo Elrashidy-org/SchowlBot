@@ -65,6 +65,7 @@ export async function sendLeadEmail(
   lead: ClientLead,
   templateKey: string,
   extraContext: Record<string, string | number | null | undefined> = {},
+  attachments?: { filename: string; content: string }[],
 ) {
   if (!resend || !lead.email) {
     return;
@@ -94,6 +95,7 @@ export async function sendLeadEmail(
         coursesUrl: COURSES_URL,
         unsubscribeUrl: unsubscribeUrl(lead.email),
       }),
+      attachments: attachments?.map((a) => ({ filename: a.filename, content: a.content })),
     });
 
     await supabase.from("communication_log").insert({
