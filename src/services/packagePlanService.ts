@@ -73,3 +73,24 @@ export async function setPackagePlanActive(planId: string, active: boolean) {
   if (error) throw error;
   return data as PackagePlan;
 }
+
+// Adjust a plan's default (list) price, or its lessons / name / notes / active flag.
+export async function updatePackagePlan(
+  planId: string,
+  patch: { name?: string; lessons?: number; listPrice?: number; notes?: string | null; active?: boolean },
+) {
+  const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (patch.name != null) update.name = patch.name.trim();
+  if (patch.lessons != null) update.lessons = Math.max(1, Math.trunc(patch.lessons));
+  if (patch.listPrice != null) update.list_price = patch.listPrice;
+  if (patch.notes !== undefined) update.notes = patch.notes;
+  if (patch.active != null) update.active = patch.active;
+  const { data, error } = await supabase
+    .from("package_plan")
+    .update(update)
+    .eq("id", planId)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as PackagePlan;
+}

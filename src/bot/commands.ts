@@ -55,6 +55,13 @@ export const slashCommands = [
     .addSubcommand((sub) => sub.setName("list").setDescription("List packages in the price book"))
     .addSubcommand((sub) =>
       sub
+        .setName("price")
+        .setDescription("Adjust a package's default (list) price")
+        .addStringOption((opt) => opt.setName("plan").setDescription("Package plan name or ID").setRequired(true))
+        .addNumberOption((opt) => opt.setName("list_price").setDescription("New list price").setRequired(true)),
+    )
+    .addSubcommand((sub) =>
+      sub
         .setName("sales")
         .setDescription("Recent package sales with discount off list")
         .addIntegerOption((opt) => opt.setName("days").setDescription("Days back (default 30)").setMinValue(1).setMaxValue(365).setRequired(false)),

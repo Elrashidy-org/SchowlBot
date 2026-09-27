@@ -125,8 +125,8 @@ export const COMMAND_CATALOG: CommandHelp[] = [
     roles: ["owner", "admin", "team_lead", "sales"],
   },
   {
-    usage: "/package add|list|sales",
-    description: "Manage the package price book and see per-sale discounts off list.",
+    usage: "/package add|list|price|sales",
+    description: "Manage the package price book, adjust list prices, and see per-sale discounts.",
     roles: ["owner", "admin", "team_lead"],
   },
   {

@@ -118,7 +118,7 @@ import {
   listWinbackCandidates,
   setStudentLevel,
 } from "../services/studentService.js";
-import { createPackagePlan, findPackagePlan, listPackagePlans } from "../services/packagePlanService.js";
+import { createPackagePlan, findPackagePlan, listPackagePlans, updatePackagePlan } from "../services/packagePlanService.js";
 import { addMaterial, listCourseMaterials, removeMaterial, requestMaterial } from "../services/materialService.js";
 import {
   completeLesson,
@@ -1623,6 +1623,17 @@ async function handlePackageCommand(interaction: ChatInputCommandInteraction) {
               : "No packages yet. Add one with `/package add`.",
           ),
       ],
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (sub === "price") {
+    const plan = await resolvePackagePlan(interaction.options.getString("plan", true));
+    const listPrice = interaction.options.getNumber("list_price", true);
+    const updated = await updatePackagePlan(plan!.id, { listPrice });
+    await interaction.reply({
+      embeds: [okEmbed("Price updated", `**${updated.name}** list price is now **${updated.list_price} ${updated.currency}** (${updated.lessons} lessons).`)],
       ephemeral: true,
     });
     return;

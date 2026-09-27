@@ -19,6 +19,7 @@ import { supabase } from "../db/supabase.js";
 import { verifyUnsubscribeToken } from "../utils/unsubscribe.js";
 import { listCourses, findCourseByNameOrId, courseLabel } from "../services/courseService.js";
 import { getAvailableSlots } from "../services/bookingService.js";
+import { listPackagePlans } from "../services/packagePlanService.js";
 import { scheduleTrial } from "../services/scheduleService.js";
 import { registerCamp } from "../services/campService.js";
 import { sendTemplatedEmail } from "../services/emailService.js";
@@ -91,6 +92,29 @@ export function createHttpApp() {
     try {
       const courses = await listCourses();
       res.json(courses.map((c) => ({ id: c.id, name_en: c.name_en, name_ar: c.name_ar })));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // Public price book for the website's pricing section.
+  app.get("/packages", async (_req, res, next) => {
+    try {
+      const plans = await listPackagePlans(true);
+      res.json(
+        plans.map((p) => {
+          const price = Number(p.list_price);
+          return {
+            id: p.id,
+            name: p.name,
+            lessons: p.lessons,
+            price,
+            currency: p.currency,
+            per_session_price: Math.round((price / p.lessons) * 100) / 100,
+            description: p.notes,
+          };
+        }),
+      );
     } catch (error) {
       next(error);
     }
