@@ -52,6 +52,9 @@ export async function enrollStudent(input: {
   teacherId?: string | null;
   lessons: number;
   price?: number | null;
+  listPrice?: number | null;
+  planId?: string | null;
+  soldByBotUserId?: string | null;
 }) {
   let name = input.name;
   let parentName = input.parentName;
@@ -97,6 +100,18 @@ export async function enrollStudent(input: {
     .single();
   if (mErr) throw mErr;
 
+  // Log the enrolling sale (plan, list price, actual price) for discount reporting.
+  await recordPackagePurchase({
+    studentId: student.id,
+    packageId: pkg.id,
+    planId: input.planId ?? null,
+    lessons: (pkg as StudentPackage).lessons_purchased,
+    listPrice: input.listPrice ?? null,
+    price: input.price ?? input.listPrice ?? 0,
+    currency: (pkg as StudentPackage).currency,
+    soldByBotUserId: input.soldByBotUserId ?? null,
+  });
+
   if (input.leadId) {
     try {
       await updateLeadStatus(input.leadId, "converted");
@@ -106,6 +121,30 @@ export async function enrollStudent(input: {
   }
 
   return { student: student as Student, pkg: pkg as StudentPackage };
+}
+
+// Record one priced sale (enrollment or renewal) for discount reporting.
+export async function recordPackagePurchase(input: {
+  studentId: string;
+  packageId: string | null;
+  planId: string | null;
+  lessons: number;
+  listPrice: number | null;
+  price: number;
+  currency?: string;
+  soldByBotUserId?: string | null;
+}) {
+  const { error } = await supabase.from("package_purchase").insert({
+    student_id: input.studentId,
+    package_id: input.packageId,
+    plan_id: input.planId,
+    lessons: Math.max(1, Math.trunc(input.lessons)),
+    list_price: input.listPrice,
+    price: input.price,
+    currency: input.currency || "EGP",
+    sold_by_bot_user_id: input.soldByBotUserId ?? null,
+  });
+  if (error) throw error;
 }
 
 export async function getStudentById(id: string) {
@@ -180,16 +219,26 @@ export async function setStudentLevel(studentId: string, level: string) {
 }
 
 // Renew = buy more lessons. Tops up the active package if there is one (and
-// clears the low-balance flag); otherwise opens a fresh package.
-export async function addLessons(studentId: string, lessons: number, price?: number | null) {
-  const add = Math.max(1, Math.trunc(lessons));
-  const active = await getActivePackage(studentId);
+// clears the low-balance flag); otherwise opens a fresh package. When a price is
+// given (a real sale), the purchase is logged for discount reporting; a bare
+// top-up (e.g. from a payment record with no price) is not.
+export async function addLessons(input: {
+  studentId: string;
+  lessons: number;
+  price?: number | null;
+  listPrice?: number | null;
+  planId?: string | null;
+  soldByBotUserId?: string | null;
+}) {
+  const add = Math.max(1, Math.trunc(input.lessons));
+  const active = await getActivePackage(input.studentId);
+  let pkg: StudentPackage;
   if (active) {
     const { data, error } = await supabase
       .from("student_package")
       .update({
         lessons_purchased: active.lessons_purchased + add,
-        price: price ?? active.price,
+        price: input.price ?? active.price,
         low_balance_reminder_sent: false,
         updated_at: new Date().toISOString(),
       })
@@ -197,15 +246,30 @@ export async function addLessons(studentId: string, lessons: number, price?: num
       .select("*")
       .single();
     if (error) throw error;
-    return data as StudentPackage;
+    pkg = data as StudentPackage;
+  } else {
+    const { data, error } = await supabase
+      .from("student_package")
+      .insert({ student_id: input.studentId, lessons_purchased: add, price: input.price ?? null, status: "active" })
+      .select("*")
+      .single();
+    if (error) throw error;
+    pkg = data as StudentPackage;
   }
-  const { data, error } = await supabase
-    .from("student_package")
-    .insert({ student_id: studentId, lessons_purchased: add, price: price ?? null, status: "active" })
-    .select("*")
-    .single();
-  if (error) throw error;
-  return data as StudentPackage;
+
+  if (input.price != null || input.planId) {
+    await recordPackagePurchase({
+      studentId: input.studentId,
+      packageId: pkg.id,
+      planId: input.planId ?? null,
+      lessons: add,
+      listPrice: input.listPrice ?? null,
+      price: input.price ?? input.listPrice ?? 0,
+      currency: pkg.currency,
+      soldByBotUserId: input.soldByBotUserId ?? null,
+    });
+  }
+  return pkg;
 }
 
 // Consume one lesson from a student's active package (called when a paid lesson
@@ -310,4 +374,41 @@ export async function listWinbackCandidates(limit = 200) {
     .in("student_id", rows.map((s) => s.id));
   const stillActive = new Set((pkgs || []).map((p) => p.student_id));
   return rows.filter((s) => !stillActive.has(s.id));
+}
+
+// The most recent priced sale for a student (for showing list vs paid on a view).
+export async function latestPurchase(studentId: string) {
+  const { data, error } = await supabase
+    .from("package_purchase")
+    .select("lessons, list_price, price, currency, created_at")
+    .eq("student_id", studentId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data as { lessons: number; list_price: number | null; price: number; currency: string; created_at: string } | null;
+}
+
+// Recent priced sales with the discount off list, for a sales/discount report.
+export async function listPackageSales(days = 30, limit = 50) {
+  const since = new Date(Date.now() - Math.max(1, days) * 86400000).toISOString();
+  const { data, error } = await supabase
+    .from("package_purchase")
+    .select("student_id, plan_id, lessons, list_price, price, currency, created_at")
+    .gte("created_at", since)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  const rows = data || [];
+  const studentIds = [...new Set(rows.map((r) => r.student_id))];
+  const names = new Map<string, string>();
+  if (studentIds.length) {
+    const { data: students } = await supabase.from("student").select("id, name").in("id", studentIds);
+    for (const s of students || []) names.set(s.id, s.name);
+  }
+  return rows.map((r) => ({
+    ...r,
+    name: names.get(r.student_id) || r.student_id,
+    discount: r.list_price != null ? Number(r.list_price) - Number(r.price) : null,
+  }));
 }

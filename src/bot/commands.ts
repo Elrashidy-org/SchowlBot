@@ -40,6 +40,27 @@ export const slashCommands = [
     .setDescription("Email lapsed students (no active package) a win-back message"),
 
   new SlashCommandBuilder()
+    .setName("package")
+    .setDescription("Manage the package price book and see discounts")
+    .addSubcommand((sub) =>
+      sub
+        .setName("add")
+        .setDescription("Add a package to the price book")
+        .addStringOption((opt) => opt.setName("name").setDescription("e.g. 16-lesson package").setRequired(true))
+        .addIntegerOption((opt) => opt.setName("lessons").setDescription("Number of lessons").setMinValue(1).setMaxValue(200).setRequired(true))
+        .addNumberOption((opt) => opt.setName("list_price").setDescription("Standard list price").setRequired(true))
+        .addStringOption((opt) => opt.setName("currency").setDescription("Currency (default EGP)").setRequired(false))
+        .addStringOption((opt) => opt.setName("notes").setDescription("Notes").setRequired(false)),
+    )
+    .addSubcommand((sub) => sub.setName("list").setDescription("List packages in the price book"))
+    .addSubcommand((sub) =>
+      sub
+        .setName("sales")
+        .setDescription("Recent package sales with discount off list")
+        .addIntegerOption((opt) => opt.setName("days").setDescription("Days back (default 30)").setMinValue(1).setMaxValue(365).setRequired(false)),
+    ),
+
+  new SlashCommandBuilder()
     .setName("init")
     .setDescription("Initialize your SchowlBot profile")
     .addSubcommand((sub) =>
@@ -531,13 +552,14 @@ export const slashCommands = [
         .setName("enroll")
         .setDescription("Enroll a student and open a lesson package")
         .addStringOption((opt) => opt.setName("course").setDescription("Course name or ID").setRequired(true))
-        .addIntegerOption((opt) => opt.setName("lessons").setDescription("Lessons in the package (e.g. 4, 8, 16)").setMinValue(1).setMaxValue(200).setRequired(true))
+        .addStringOption((opt) => opt.setName("plan").setDescription("Package plan from the price book (prefills lessons + list price)").setRequired(false))
+        .addIntegerOption((opt) => opt.setName("lessons").setDescription("Lessons in the package (overrides the plan)").setMinValue(1).setMaxValue(200).setRequired(false))
+        .addNumberOption((opt) => opt.setName("price").setDescription("Actual price paid (defaults to the plan's list price)").setRequired(false))
         .addStringOption((opt) => opt.setName("lead_id").setDescription("Lead to enroll from").setRequired(false))
         .addStringOption((opt) => opt.setName("name").setDescription("Student name (if no lead)").setRequired(false))
         .addStringOption((opt) => opt.setName("track").setDescription("Track within the course").setRequired(false))
         .addStringOption((opt) => opt.setName("level").setDescription("Current level").setRequired(false))
-        .addStringOption((opt) => opt.setName("teacher").setDescription("Assigned teacher mention or ID").setRequired(false))
-        .addNumberOption((opt) => opt.setName("price").setDescription("Package price").setRequired(false)),
+        .addStringOption((opt) => opt.setName("teacher").setDescription("Assigned teacher mention or ID").setRequired(false)),
     )
     .addSubcommand((sub) =>
       sub
@@ -563,8 +585,9 @@ export const slashCommands = [
         .setName("renew")
         .setDescription("Add lessons to a student's package")
         .addStringOption((opt) => opt.setName("student").setDescription("Name or student ID").setRequired(true))
-        .addIntegerOption((opt) => opt.setName("lessons").setDescription("Lessons to add (e.g. 4, 8, 16)").setMinValue(1).setMaxValue(200).setRequired(true))
-        .addNumberOption((opt) => opt.setName("price").setDescription("Package price").setRequired(false)),
+        .addStringOption((opt) => opt.setName("plan").setDescription("Package plan from the price book (prefills lessons + list price)").setRequired(false))
+        .addIntegerOption((opt) => opt.setName("lessons").setDescription("Lessons to add (overrides the plan)").setMinValue(1).setMaxValue(200).setRequired(false))
+        .addNumberOption((opt) => opt.setName("price").setDescription("Actual price paid (defaults to the plan's list price)").setRequired(false)),
     )
     .addSubcommand((sub) =>
       sub

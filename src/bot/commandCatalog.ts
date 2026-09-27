@@ -125,6 +125,11 @@ export const COMMAND_CATALOG: CommandHelp[] = [
     roles: ["owner", "admin", "team_lead", "sales"],
   },
   {
+    usage: "/package add|list|sales",
+    description: "Manage the package price book and see per-sale discounts off list.",
+    roles: ["owner", "admin", "team_lead"],
+  },
+  {
     usage: "/camp list|export|group create|assign|auto|list|members",
     description: "View/export camp registrations and manage groups (4-5 students each).",
     roles: ["owner", "admin", "team_lead", "sales"],

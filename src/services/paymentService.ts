@@ -27,7 +27,7 @@ export async function recordPayment(input: {
   let lessonsRemainingAfter: number | null = null;
   let packageId: string | null = null;
   if (input.lessons && input.lessons > 0) {
-    const pkg = await addLessons(input.studentId, input.lessons, null);
+    const pkg = await addLessons({ studentId: input.studentId, lessons: input.lessons });
     lessonsRemainingAfter = lessonsRemaining(pkg);
     packageId = pkg.id;
   } else {

@@ -110,12 +110,15 @@ import {
   findStudent,
   getActivePackage,
   countLowBalancePackages,
+  latestPurchase,
   lessonsRemaining,
+  listPackageSales,
   listStudents,
   listLowBalancePackages,
   listWinbackCandidates,
   setStudentLevel,
 } from "../services/studentService.js";
+import { createPackagePlan, findPackagePlan, listPackagePlans } from "../services/packagePlanService.js";
 import { addMaterial, listCourseMaterials, removeMaterial, requestMaterial } from "../services/materialService.js";
 import {
   completeLesson,
@@ -624,6 +627,7 @@ async function handleSlashCommand(interaction: ChatInputCommandInteraction) {
   if (command === "summary") return handleSummaryCommand(interaction);
   if (command === "reengage") return handleReengageCommand(interaction);
   if (command === "winback") return handleWinbackCommand(interaction);
+  if (command === "package") return handlePackageCommand(interaction);
   if (command === "init") return handleInit(interaction);
   if (command === "lead") return handleLeadCommand(interaction);
   if (command === "teacher") return handleTeacherCommand(interaction);
@@ -1568,6 +1572,91 @@ async function mustFindStudent(value: string) {
   return student;
 }
 
+// Resolve an optional `plan` option to a package plan, or null when not given.
+async function resolvePackagePlan(value: string | null) {
+  if (!value) return null;
+  const plan = await findPackagePlan(value);
+  if (!plan) throw new Error(`No package plan matches "${value}". Try /package list.`);
+  return plan;
+}
+
+// "(−600 vs list 3200)" / "(+300 vs list 3200)" / "" when it matches the list.
+function discountNote(listPrice: number | null, price: number) {
+  if (listPrice == null) return "";
+  const d = Number(listPrice) - price;
+  if (d === 0) return "";
+  return d > 0 ? ` (−${d} vs list ${listPrice})` : ` (+${-d} vs list ${listPrice})`;
+}
+
+async function handlePackageCommand(interaction: ChatInputCommandInteraction) {
+  await requireBotRole(interaction.user.id, ["owner", "admin", "team_lead"]);
+  const sub = interaction.options.getSubcommand();
+
+  if (sub === "add") {
+    const plan = await createPackagePlan({
+      name: interaction.options.getString("name", true),
+      lessons: interaction.options.getInteger("lessons", true),
+      listPrice: interaction.options.getNumber("list_price", true),
+      currency: interaction.options.getString("currency") || undefined,
+      notes: interaction.options.getString("notes"),
+    });
+    await interaction.reply({
+      embeds: [okEmbed("Package added to the price book", `**${plan.name}** — ${plan.lessons} lessons · list **${plan.list_price} ${plan.currency}**`)],
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (sub === "list") {
+    const plans = await listPackagePlans(false);
+    await interaction.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle("Package price book")
+          .setColor(0x00b5b5)
+          .setDescription(
+            plans.length
+              ? plans
+                  .map((p) => `${p.active ? "" : "🚫 "}**${p.name}** — ${p.lessons} lessons · ${p.list_price} ${p.currency}`)
+                  .join("\n")
+                  .slice(0, 4000)
+              : "No packages yet. Add one with `/package add`.",
+          ),
+      ],
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (sub === "sales") {
+    const days = interaction.options.getInteger("days") ?? 30;
+    const sales = await listPackageSales(days);
+    const totalDiscount = sales.reduce((s, r) => s + (r.discount ?? 0), 0);
+    await interaction.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle(`Package sales (last ${days} days)`)
+          .setColor(0x00b5b5)
+          .setDescription(
+            sales.length
+              ? `${sales
+                  .map(
+                    (r) =>
+                      `${(r.created_at as string).slice(0, 10)} — ${r.name}: ${r.lessons} lessons, paid **${r.price} ${r.currency}**${
+                        r.list_price != null ? discountNote(Number(r.list_price), Number(r.price)) : ""
+                      }`,
+                  )
+                  .join("\n")
+                  .slice(0, 3800)}\n\n**${sales.length}** sales · total discount off list: **${totalDiscount} EGP**`
+              : "No package sales in this period.",
+          ),
+      ],
+      ephemeral: true,
+    });
+    return;
+  }
+}
+
 
 // DM the owner(s) when a student's package is running low on lessons.
 export async function notifyRenewalDue(input: {
@@ -1631,6 +1720,11 @@ async function handleStudentCommand(interaction: ChatInputCommandInteraction) {
     const course = await mustFindCourse(interaction.options.getString("course", true));
     const teacherRaw = interaction.options.getString("teacher");
     const teacher = teacherRaw ? await mustFindTeacher(teacherRaw) : null;
+    const plan = await resolvePackagePlan(interaction.options.getString("plan"));
+    const lessons = interaction.options.getInteger("lessons") ?? plan?.lessons;
+    if (!lessons) throw new Error("Provide a lessons count or a package plan.");
+    const price = interaction.options.getNumber("price") ?? plan?.list_price ?? undefined;
+    const actor = await getBotUserByDiscordId(interaction.user.id);
     const { student, pkg } = await enrollStudent({
       leadId: interaction.options.getString("lead_id") || undefined,
       name: interaction.options.getString("name") || undefined,
@@ -1638,14 +1732,19 @@ async function handleStudentCommand(interaction: ChatInputCommandInteraction) {
       track: interaction.options.getString("track"),
       level: interaction.options.getString("level"),
       teacherId: teacher?.id,
-      lessons: interaction.options.getInteger("lessons", true),
-      price: interaction.options.getNumber("price") ?? undefined,
+      lessons,
+      price,
+      listPrice: plan?.list_price ?? null,
+      planId: plan?.id ?? null,
+      soldByBotUserId: actor?.id ?? null,
     });
     await interaction.reply({
       embeds: [
         okEmbed(
           "Student enrolled",
-          `**${student.name}** enrolled in ${courseLabel(course)} with a **${pkg.lessons_purchased}-lesson** package.\nStudent ID: \`${student.id}\``,
+          `**${student.name}** enrolled in ${courseLabel(course)} — a **${pkg.lessons_purchased}-lesson** package${
+            price != null ? ` at **${price} ${pkg.currency}**${discountNote(plan?.list_price ?? null, price)}` : ""
+          }.\nStudent ID: \`${student.id}\``,
         ),
       ],
       ephemeral: true,
@@ -1656,6 +1755,7 @@ async function handleStudentCommand(interaction: ChatInputCommandInteraction) {
   if (sub === "view") {
     const student = await mustFindStudent(interaction.options.getString("student", true));
     const pkg = await getActivePackage(student.id);
+    const lastSale = await latestPurchase(student.id);
     const course = student.course_id ? await findCourseByNameOrId(student.course_id) : null;
     const paid = await getStudentPaidTotal(student.id);
     const embed = new EmbedBuilder()
@@ -1671,8 +1771,17 @@ async function handleStudentCommand(interaction: ChatInputCommandInteraction) {
         {
           name: "Package",
           value: pkg
-            ? `**${lessonsRemaining(pkg)}** of ${pkg.lessons_purchased} lessons left${pkg.price != null ? ` · ${pkg.price} ${pkg.currency}` : ""}`
+            ? `**${lessonsRemaining(pkg)}** of ${pkg.lessons_purchased} lessons left`
             : "none",
+          inline: false,
+        },
+        {
+          name: "Last sale",
+          value: lastSale
+            ? `${lastSale.lessons} lessons · paid **${lastSale.price} ${lastSale.currency}**${
+                lastSale.list_price != null ? ` (list ${lastSale.list_price}${discountNote(lastSale.list_price, Number(lastSale.price))})` : ""
+              }`
+            : "—",
           inline: false,
         },
         {
@@ -1710,11 +1819,28 @@ async function handleStudentCommand(interaction: ChatInputCommandInteraction) {
 
   if (sub === "renew") {
     const student = await mustFindStudent(interaction.options.getString("student", true));
-    const lessons = interaction.options.getInteger("lessons", true);
-    const price = interaction.options.getNumber("price") ?? undefined;
-    const pkg = await addLessons(student.id, lessons, price);
+    const plan = await resolvePackagePlan(interaction.options.getString("plan"));
+    const lessons = interaction.options.getInteger("lessons") ?? plan?.lessons;
+    if (!lessons) throw new Error("Provide a lessons count or a package plan.");
+    const price = interaction.options.getNumber("price") ?? plan?.list_price ?? undefined;
+    const actor = await getBotUserByDiscordId(interaction.user.id);
+    const pkg = await addLessons({
+      studentId: student.id,
+      lessons,
+      price,
+      listPrice: plan?.list_price ?? null,
+      planId: plan?.id ?? null,
+      soldByBotUserId: actor?.id ?? null,
+    });
     await interaction.reply({
-      embeds: [okEmbed("Package renewed", `Added **${lessons}** lessons for **${student.name}** — now **${lessonsRemaining(pkg)}** lessons left.`)],
+      embeds: [
+        okEmbed(
+          "Package renewed",
+          `Added **${lessons}** lessons for **${student.name}** — now **${lessonsRemaining(pkg)}** left${
+            price != null ? `, sold at **${price} ${pkg.currency}**${discountNote(plan?.list_price ?? null, price)}` : ""
+          }.`,
+        ),
+      ],
       ephemeral: true,
     });
     return;
