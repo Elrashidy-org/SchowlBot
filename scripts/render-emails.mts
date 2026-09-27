@@ -57,14 +57,15 @@ const written: string[] = [];
 
 for (const key of keys) {
   for (const lang of ["en", "ar"] as const) {
-    const rendered = await renderForLead(key, lang, sample);
+    const ctx = { ...sample, camp: lang === "ar" ? "معسكر البرمجة الصيفي" : "Summer Code Camp" };
+    const rendered = await renderForLead(key, lang, ctx);
     const email = renderBrandedEmail({
       subject: rendered.subject,
       body: rendered.body,
       language: lang,
       baseKey: key,
-      context: sample,
-      unsubscribeUrl: "https://api.schowl.com/unsubscribe?e=demo",
+      context: ctx,
+      unsubscribeUrl: "https://bot.schowl.com/unsubscribe?e=demo",
       assetBaseUrl: ".",
     });
     const file = join(OUT, `${key}_${lang}.html`);

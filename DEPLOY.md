@@ -13,7 +13,7 @@ A cheap always-on Linux box — ideal for this bot. One-time setup:
 ### 1. Point a subdomain at the VPS
 The website is HTTPS, so browsers can't POST leads to a plain `http://<ip>`
 (mixed content is blocked). You need HTTPS on the API, which means a domain.
-In your DNS, create an **A record**: `api.schowl.com → <your VPS IP>`.
+In your DNS, create an **A record**: `bot.schowl.com → <your VPS IP>`.
 
 ### 2. Install Docker (SSH into the VPS as root)
 ```bash
@@ -26,7 +26,7 @@ git clone <your-repo-url> schowlbot && cd schowlbot
 cp .env.example .env
 nano .env   # fill in all values (see the list at the bottom)
 ```
-Set `PUBLIC_API_BASE_URL=https://api.schowl.com` and
+Set `PUBLIC_API_BASE_URL=https://bot.schowl.com` and
 `CORS_ALLOWED_ORIGINS=https://schowl.com,https://www.schowl.com`.
 
 ### 4. Start it
@@ -43,7 +43,7 @@ apt update && apt install -y nginx certbot python3-certbot-nginx
 Create `/etc/nginx/sites-available/schowlbot`:
 ```nginx
 server {
-    server_name api.schowl.com;
+    server_name bot.schowl.com;
     location / {
         proxy_pass http://127.0.0.1:3001;
         proxy_set_header Host $host;
@@ -55,13 +55,13 @@ server {
 ```bash
 ln -s /etc/nginx/sites-available/schowlbot /etc/nginx/sites-enabled/
 nginx -t && systemctl reload nginx
-certbot --nginx -d api.schowl.com     # issues + wires up the HTTPS cert
+certbot --nginx -d bot.schowl.com     # issues + wires up the HTTPS cert
 ufw allow 'Nginx Full' && ufw allow OpenSSH && ufw --force enable
 ```
 
 ### 6. Point the website at it
-Set the frontend's `NEXT_PUBLIC_LEAD_ENDPOINT=https://api.schowl.com/client/leads/`
-and redeploy the site. Verify: `curl https://api.schowl.com/health`.
+Set the frontend's `NEXT_PUBLIC_LEAD_ENDPOINT=https://bot.schowl.com/client/leads/`
+and redeploy the site. Verify: `curl https://bot.schowl.com/health`.
 
 ### Updating later
 ```bash

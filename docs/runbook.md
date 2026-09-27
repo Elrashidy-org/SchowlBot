@@ -9,7 +9,7 @@
 - Add owner Discord IDs to `DISCORD_OWNER_IDS`.
 - Run `npm run commands:deploy`.
 - Run `supabase/migrations/001_schowlbot.sql` in Supabase SQL Editor.
-- Set `NEXT_PUBLIC_LEAD_ENDPOINT=https://api.schowl.com/client/leads/` in the frontend.
+- Set `NEXT_PUBLIC_LEAD_ENDPOINT=https://bot.schowl.com/client/leads/` in the frontend.
 
 ## RLS Model
 

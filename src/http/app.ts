@@ -335,11 +335,12 @@ export function createHttpApp() {
       const reg = await registerCamp({ ...payload, camp: camp.slug });
 
       if (reg.email) {
+        const campTitle = (reg.language === "ar" ? camp.title_ar : camp.title_en) || camp.title_en || reg.camp;
         await sendTemplatedEmail({
           to: reg.email,
           templateKey: "camp_registered",
           language: reg.language,
-          context: { parent_name: reg.parent_name || "", child_name: reg.child_name, camp: reg.camp },
+          context: { parent_name: reg.parent_name || "", child_name: reg.child_name, camp: campTitle },
         });
       }
       await notifyCampRegistration({
