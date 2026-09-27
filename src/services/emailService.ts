@@ -82,19 +82,26 @@ export async function sendLeadEmail(
   });
 
   try {
+    const email = renderBrandedEmail({
+      subject: rendered.subject,
+      body: rendered.body,
+      language: lead.language,
+      baseKey: templateKey,
+      context: {
+        child_name: lead.child_name,
+        parent_name: lead.parent_name,
+        course_interest: lead.course_interest,
+        quiz_recommendation: lead.quiz_recommendation,
+        ...extraContext,
+      },
+      unsubscribeUrl: unsubscribeUrl(lead.email),
+    });
     const result = await resend.emails.send({
       from: config.resendFromEmail,
       to: lead.email,
       subject: rendered.subject || "Schowl",
-      html: renderBrandedEmail({
-        subject: rendered.subject,
-        body: rendered.body,
-        language: lead.language,
-        logoUrl: config.emailLogoUrl,
-        courses: NO_UPSELL_TEMPLATES.has(templateKey) ? [] : await buildCourseUpsell(lead.language),
-        coursesUrl: COURSES_URL,
-        unsubscribeUrl: unsubscribeUrl(lead.email),
-      }),
+      html: email.html,
+      text: email.text,
       attachments: attachments?.map((a) => ({ filename: a.filename, content: a.content })),
     });
 
@@ -139,17 +146,20 @@ export async function sendStudentReport(input: {
     ...lines,
   ].join("\n");
   try {
+    const email = renderBrandedEmail({
+      subject: `${input.childName}'s progress report`,
+      body,
+      language: input.language,
+      baseKey: "student_report",
+      context: { child_name: input.childName },
+      unsubscribeUrl: unsubscribeUrl(input.to),
+    });
     await resend.emails.send({
       from: config.resendFromEmail,
       to: input.to,
       subject: `${input.childName}'s Schowl progress report`,
-      html: renderBrandedEmail({
-        subject: `${input.childName}'s progress report`,
-        body,
-        language: input.language,
-        logoUrl: config.emailLogoUrl,
-        unsubscribeUrl: unsubscribeUrl(input.to),
-      }),
+      html: email.html,
+      text: email.text,
     });
     return true;
   } catch (error) {
@@ -170,17 +180,20 @@ export async function sendTemplatedEmail(input: {
   if (await isUnsubscribed(input.to)) return;
   const rendered = await renderForLead(input.templateKey, input.language, input.context);
   try {
+    const email = renderBrandedEmail({
+      subject: rendered.subject,
+      body: rendered.body,
+      language: input.language,
+      baseKey: input.templateKey,
+      context: input.context,
+      unsubscribeUrl: unsubscribeUrl(input.to),
+    });
     const result = await resend.emails.send({
       from: config.resendFromEmail,
       to: input.to,
       subject: rendered.subject || "Schowl",
-      html: renderBrandedEmail({
-        subject: rendered.subject,
-        body: rendered.body,
-        language: input.language,
-        logoUrl: config.emailLogoUrl,
-        unsubscribeUrl: unsubscribeUrl(input.to),
-      }),
+      html: email.html,
+      text: email.text,
     });
     await supabase.from("communication_log").insert({
       lead_id: input.leadId || null,

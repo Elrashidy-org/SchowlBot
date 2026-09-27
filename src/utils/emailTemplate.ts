@@ -1,43 +1,121 @@
-// Schowl brand palette (from the website's tailwind config).
-const NAVY = "#0C4160"; // primary
-const INK = "#071330"; // secondary (darkest)
-const CYAN = "#00B5B5"; // signature accent
-const TEAL_DARK = "#00A3A3";
-const SEMI_DARK = "#738FA7"; // muted text
-const PAGE_BG = "#EEF2F7";
-const BORDER = "#E4E8F0";
-const FONT = "'Cairo','Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+import { config } from "../config.js";
 
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+// Schowl "arcade" brand palette (matches the website).
+const PAGE_BG = "#f4f2ff";
+const CARD = "#ffffff";
+const CARD_BORDER = "#e2dcff";
+const TITLE = "#1b1f5e";
+const TITLE_SHADOW = "#7c5cff";
+const BODY = "#151a4a";
+const MUTED = "#4a5280";
+const BTN_BG = "#4df2c4";
+const BTN_TEXT = "#0b1030";
+const BTN_BORDER = "#16b58f";
+const INFO_BG = "#f6f4ff";
+const CHIP_BG = "#eafff8";
+const CHIP_TEXT = "#0b6b52";
+const CHIP_BORDER = "#4df2c4";
+const FOOTER_BG = "#0b1030";
+const FOOTER_TEXT = "#c7d0f0";
+const BODY_FONT = "'Cairo',Tahoma,Arial,sans-serif";
+const TITLE_FONT_EN = "'Press Start 2P','Arial Black',Arial,sans-serif";
+
+type Hero = "jump" | "owl" | null;
+type Cta = "trial" | "join" | "none";
+interface EmailMeta {
+  chip: { en: string; ar: string };
+  hero: Hero;
+  cta: Cta;
+  infoBox?: boolean;
 }
 
-// Turn bare URLs into styled links (input is already HTML-escaped).
+// Per-template presentation, keyed by the base template key.
+const EMAIL_META: Record<string, EmailMeta> = {
+  lead_received: { chip: { en: "NEW QUEST", ar: "مهمة جديدة" }, hero: "jump", cta: "trial" },
+  trial_booked: { chip: { en: "LEVEL CLEARED", ar: "تم الحجز" }, hero: "jump", cta: "join", infoBox: true },
+  trial_reminder_24h: { chip: { en: "REMINDER", ar: "تذكير" }, hero: "owl", cta: "join", infoBox: true },
+  trial_reminder_1h: { chip: { en: "STARTING SOON", ar: "تبدأ قريباً" }, hero: "owl", cta: "join", infoBox: true },
+  trial_done_next_steps: { chip: { en: "GREAT RUN", ar: "أداء رائع" }, hero: "jump", cta: "trial" },
+  no_response_followup_24h: { chip: { en: "STILL OPEN", ar: "ما زال متاحاً" }, hero: "owl", cta: "trial" },
+  booking_abandoned: { chip: { en: "ALMOST THERE", ar: "اقتربت" }, hero: "owl", cta: "trial" },
+  converted_welcome: { chip: { en: "WELCOME", ar: "أهلاً بك" }, hero: "jump", cta: "none" },
+  lesson_reminder: { chip: { en: "REMINDER", ar: "تذكير" }, hero: "owl", cta: "join", infoBox: true },
+  lessons_running_low: { chip: { en: "LEVEL UP", ar: "واصل التقدّم" }, hero: "owl", cta: "none" },
+  membership_renewal: { chip: { en: "KEEP GOING", ar: "استمر" }, hero: "owl", cta: "none" },
+  payment_receipt: { chip: { en: "RECEIPT", ar: "إيصال" }, hero: "jump", cta: "none" },
+  reengagement: { chip: { en: "STILL OPEN", ar: "ما زال متاحاً" }, hero: "owl", cta: "trial" },
+  winback: { chip: { en: "COME BACK", ar: "عد إلينا" }, hero: "owl", cta: "trial" },
+  progression_upsell: { chip: { en: "LEVEL UP", ar: "مستوى جديد" }, hero: "jump", cta: "none" },
+  camp_registered: { chip: { en: "YOU'RE IN", ar: "تم التسجيل" }, hero: "jump", cta: "none" },
+  camp_group_welcome: { chip: { en: "YOUR GROUP", ar: "مجموعتك" }, hero: "jump", cta: "none" },
+  camp_reminder: { chip: { en: "STARTING SOON", ar: "تبدأ قريباً" }, hero: "owl", cta: "none" },
+  student_report: { chip: { en: "PROGRESS", ar: "التقدّم" }, hero: "jump", cta: "none" },
+};
+const DEFAULT_META: EmailMeta = { chip: { en: "SCHOWL", ar: "Schowl" }, hero: null, cta: "trial" };
+
+function escapeHtml(value: string) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 function autolink(value: string) {
   return value.replace(
     /(https?:\/\/[^\s<]+)/g,
-    `<a href="$1" style="color:${TEAL_DARK};text-decoration:none;font-weight:700;">$1</a>`,
+    `<a href="$1" style="color:#5b3df2;text-decoration:underline;font-weight:700;">$1</a>`,
   );
+}
+
+// Map a course name/keyword to the website's course filter, for the trial CTA.
+function courseKeyword(value?: string | null) {
+  const v = (value || "").toLowerCase();
+  if (!v) return null;
+  if (v.includes("python")) return "python";
+  if (v.includes("scratch")) return "scratch";
+  if (v.includes("web")) return "web";
+  if (v.includes("game")) return "game";
+  if (v.includes("flutter") || v.includes("mobile") || v.includes("app")) return "mobile";
+  if (v.includes("graphic") || v.includes("design")) return "design";
+  return null;
+}
+
+function bookTrialUrl(rtl: boolean, keyword: string | null) {
+  const base = `https://schowl.com${rtl ? "/ar" : ""}/book-trial/`;
+  return keyword ? `${base}?course=${keyword}` : base;
+}
+
+// A bulletproof (table-based) button that renders in every email client.
+function button(label: string, url: string, opts: { primary?: boolean; rtl?: boolean } = {}) {
+  const primary = opts.primary !== false;
+  const bg = primary ? BTN_BG : CARD;
+  const color = primary ? BTN_TEXT : TITLE;
+  const border = primary ? `border-bottom:4px solid ${BTN_BORDER};` : `border:1px solid ${CARD_BORDER};`;
+  return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto 12px;"><tr><td style="border-radius:10px;background:${bg};${border}">
+    <a href="${url}" style="display:inline-block;padding:14px 22px;color:${color};font-size:14px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;text-decoration:none;font-family:${BODY_FONT};">${escapeHtml(
+    label,
+  )}</a>
+  </td></tr></table>`;
+}
+
+export interface RenderedEmail {
+  html: string;
+  text: string;
 }
 
 export function renderBrandedEmail(input: {
   subject?: string | null;
   body: string;
   language?: string | null;
-  logoUrl?: string | null;
-  headerStyle?: "light" | "dark";
-  courses?: { name: string; ageText?: string; url?: string }[];
-  coursesUrl?: string;
+  baseKey?: string | null;
+  context?: Record<string, string | number | null | undefined>;
   unsubscribeUrl?: string;
-}) {
-  const dark = input.headerStyle === "dark";
+  assetBaseUrl?: string;
+}): RenderedEmail {
   const rtl = input.language === "ar";
   const dir = rtl ? "rtl" : "ltr";
   const align = rtl ? "right" : "left";
+  const ctx = input.context || {};
+  const meta = (input.baseKey && EMAIL_META[input.baseKey]) || DEFAULT_META;
+  const assets = (input.assetBaseUrl || `${config.publicApiBaseUrl}/static/email`).replace(/\/$/, "");
+  const t = (en: string, ar: string) => (rtl ? ar : en);
 
   const paragraphs = input.body
     .split(/\n+/)
@@ -45,105 +123,148 @@ export function renderBrandedEmail(input: {
     .filter(Boolean)
     .map(
       (line) =>
-        `<p style="margin:0 0 16px;color:${INK};font-size:16px;line-height:1.7;text-align:${align};">${autolink(
+        `<p style="margin:0 0 16px;color:${BODY};font-size:16px;line-height:1.6;text-align:${align};">${autolink(
           escapeHtml(line),
         )}</p>`,
     )
     .join("");
 
-  const heading = input.subject
-    ? `<h1 style="margin:0 0 22px;color:${NAVY};font-size:22px;font-weight:800;text-align:${align};">${escapeHtml(
-        input.subject,
-      )}</h1>`
+  // Chip.
+  const chip = `<div style="text-align:${align};margin:0 0 12px;"><span style="display:inline-block;background:${CHIP_BG};color:${CHIP_TEXT};border:1px solid ${CHIP_BORDER};border-radius:999px;padding:5px 12px;font-size:11px;font-weight:700;letter-spacing:0.06em;font-family:${BODY_FONT};">${escapeHtml(
+    t(meta.chip.en, meta.chip.ar),
+  )}</span></div>`;
+
+  // Hero owl.
+  const heroSrc = meta.hero === "jump" ? "owl-jump.png" : meta.hero === "owl" ? "owl.png" : null;
+  const hero = heroSrc
+    ? `<div style="text-align:center;margin:4px 0 14px;"><img src="${assets}/${heroSrc}" alt="Schowl owl" width="104" height="104" style="width:104px;height:104px;border:0;image-rendering:pixelated;"></div>`
     : "";
 
-  const logoHeight = dark ? 56 : 48;
-  const logo = input.logoUrl
-    ? `<img src="${input.logoUrl}" alt="Schowl" height="${logoHeight}" style="height:${logoHeight}px;width:auto;border:0;display:inline-block;">`
-    : `<span style="font-size:26px;font-weight:800;letter-spacing:0.5px;color:${dark ? "#FFFFFF" : NAVY};">Schowl<span style="color:${CYAN};">.</span></span>`;
+  // Title (arcade for EN, bold Cairo for AR).
+  const titleFont = rtl ? BODY_FONT : TITLE_FONT_EN;
+  const titleSize = rtl ? "20px" : "17px";
+  const heading = input.subject
+    ? `<h1 style="margin:0 0 18px;color:${TITLE};font-family:${titleFont};font-size:${titleSize};line-height:1.5;font-weight:700;letter-spacing:0.04em;text-align:${align};text-shadow:0 2px 0 ${TITLE_SHADOW};text-transform:${
+        rtl ? "none" : "uppercase"
+      };">${escapeHtml(input.subject)}</h1>`
+    : "";
 
-  const header = dark
-    ? `<tr><td style="background:${INK};background-image:linear-gradient(135deg,#0A4D68 0%,${CYAN} 100%);padding:28px 32px;text-align:center;">${logo}</td></tr>`
-    : `<tr><td style="background:#FFFFFF;padding:26px 32px 18px;text-align:center;">${logo}</td></tr>
-        <tr><td style="height:4px;background:${CYAN};line-height:4px;font-size:0;">&nbsp;</td></tr>`;
+  // Info box (date/time, course, child) for confirmations & reminders.
+  let infoBox = "";
+  if (meta.infoBox) {
+    const rows: { label: string; value: string }[] = [];
+    if (ctx.scheduled_at) rows.push({ label: t("When", "الموعد"), value: `${ctx.scheduled_at} (Africa/Cairo)` });
+    const course = ctx.course_interest || ctx.course || ctx.quiz_recommendation;
+    if (course) rows.push({ label: t("Course", "الكورس"), value: String(course) });
+    if (ctx.child_name) rows.push({ label: t("Student", "الطالب"), value: String(ctx.child_name) });
+    if (rows.length) {
+      infoBox = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;background:${INFO_BG};border-radius:12px;"><tr><td style="padding:16px 18px;" dir="${dir}">${rows
+        .map(
+          (r) =>
+            `<div style="margin:0 0 8px;text-align:${align};"><span style="display:block;color:${MUTED};font-size:11px;text-transform:uppercase;letter-spacing:0.05em;font-family:${BODY_FONT};">${escapeHtml(
+              r.label,
+            )}</span><span style="color:${BODY};font-size:15px;font-weight:700;font-family:${BODY_FONT};">${escapeHtml(
+              r.value,
+            )}</span></div>`,
+        )
+        .join("")}</td></tr></table>`;
+    }
+  }
+
+  // CTAs.
+  let ctas = "";
+  const ctaUrls: string[] = [];
+  if (meta.cta === "join") {
+    const meetingUrl = ctx.meeting_url && String(ctx.meeting_url).startsWith("http") ? String(ctx.meeting_url) : null;
+    if (meetingUrl) {
+      ctas += button(t("Join the lesson", "انضم للحصة"), meetingUrl, { primary: true, rtl });
+      ctaUrls.push(meetingUrl);
+    }
+    if (ctx.calendar_url) {
+      ctas += button(t("Add to Google Calendar", "أضف إلى تقويم جوجل"), String(ctx.calendar_url), { primary: false, rtl });
+      ctaUrls.push(String(ctx.calendar_url));
+    }
+    if (!meetingUrl && !ctx.calendar_url) {
+      const url = bookTrialUrl(rtl, null);
+      ctas += button(t("Book a trial", "احجز حصة تجريبية"), url, { primary: true, rtl });
+      ctaUrls.push(url);
+    }
+  } else if (meta.cta === "trial") {
+    const url = bookTrialUrl(rtl, courseKeyword(String(ctx.course_interest || ctx.quiz_recommendation || "")));
+    ctas += button(t("Book a trial", "احجز حصة تجريبية"), url, { primary: true, rtl });
+    ctaUrls.push(url);
+  }
+  const ctaBlock = ctas ? `<div style="text-align:center;margin:8px 0 4px;">${ctas}</div>` : "";
+
+  // Footer links.
+  const footerLinks: string[] = [];
+  if (config.supportWhatsapp) {
+    footerLinks.push(
+      `<a href="https://wa.me/${config.supportWhatsapp.replace(/\D/g, "")}" style="color:${FOOTER_TEXT};text-decoration:underline;">WhatsApp</a>`,
+    );
+  }
+  footerLinks.push(`<a href="https://schowl.com" style="color:${FOOTER_TEXT};text-decoration:underline;">schowl.com</a>`);
+  if (input.unsubscribeUrl) {
+    footerLinks.push(
+      `<a href="${input.unsubscribeUrl}" style="color:${FOOTER_TEXT};text-decoration:underline;">${t("Unsubscribe", "إلغاء الاشتراك")}</a>`,
+    );
+  }
 
   const preheader = input.subject ? escapeHtml(input.subject) : "Schowl";
 
-  // Upsell: "Explore our courses" block.
-  let coursesBlock = "";
-  if (input.courses && input.courses.length) {
-    const title = rtl ? "تصفّح كورساتنا" : "Explore our courses";
-    const cta = rtl ? "شاهد كل الكورسات" : "Browse all courses";
-    const items = input.courses
-      .map((c) => {
-        const nameHtml = c.url
-          ? `<a href="${c.url}" style="color:${NAVY};font-size:15px;font-weight:700;text-decoration:none;">${escapeHtml(c.name)} &rsaquo;</a>`
-          : `<span style="color:${NAVY};font-size:15px;font-weight:700;">${escapeHtml(c.name)}</span>`;
-        return `<tr>
-            <td style="padding:10px 14px;border:1px solid ${BORDER};border-radius:10px;background:#F8FAFC;" dir="${dir}">
-              ${nameHtml}${
-                c.ageText
-                  ? `<br><span style="color:${SEMI_DARK};font-size:12px;">${escapeHtml(c.ageText)}</span>`
-                  : ""
-              }
-            </td>
-          </tr>
-          <tr><td style="height:8px;line-height:8px;font-size:0;">&nbsp;</td></tr>`;
-      })
-      .join("");
-    const button = input.coursesUrl
-      ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:6px auto 0;"><tr><td style="border-radius:10px;background:${CYAN};">
-          <a href="${input.coursesUrl}" style="display:inline-block;padding:12px 26px;color:#FFFFFF;font-size:15px;font-weight:700;text-decoration:none;">${cta} →</a>
-        </td></tr></table>`
-      : "";
-    coursesBlock = `
-        <tr><td style="padding:0 32px;"><div style="border-top:1px solid ${BORDER};"></div></td></tr>
-        <tr>
-          <td style="padding:24px 32px 4px;" dir="${dir}">
-            <h2 style="margin:0 0 16px;color:${NAVY};font-size:18px;font-weight:800;text-align:${align};">${title}</h2>
-            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${items}</table>
-            ${button}
-          </td>
-        </tr>`;
-  }
-
-  return `<!doctype html>
+  const html = `<!doctype html>
 <html dir="${dir}" lang="${rtl ? "ar" : "en"}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Press+Start+2P&display=swap" rel="stylesheet">
 </head>
-<body style="margin:0;padding:0;background:${PAGE_BG};font-family:${FONT};">
+<body style="margin:0;padding:0;background:${PAGE_BG};font-family:${BODY_FONT};">
 <span style="display:none;max-height:0;overflow:hidden;opacity:0;">${preheader}</span>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${PAGE_BG};padding:24px 12px;">
-  <tr>
-    <td align="center">
-      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:100%;background:#FFFFFF;border:1px solid ${BORDER};border-radius:16px;overflow:hidden;font-family:${FONT};">
-        ${header}
-        <tr>
-          <td style="padding:32px 32px 24px;" dir="${dir}">
-            ${heading}
-            ${paragraphs}
-          </td>
-        </tr>
-        ${coursesBlock}
-        <tr><td style="height:8px;"></td></tr>
-        <tr>
-          <td style="background:${INK};padding:22px 32px;text-align:center;color:#AFC0D4;font-size:12px;line-height:1.6;font-family:${FONT};">
-            <span style="color:#FFFFFF;font-weight:700;">Schowl</span> — online courses that build creators, not just consumers.<br>
-            This is an automated message; please don't reply to this email.${
-              input.unsubscribeUrl
-                ? `<br><a href="${input.unsubscribeUrl}" style="color:#AFC0D4;text-decoration:underline;">Unsubscribe</a>`
-                : ""
-            }
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
+  <tr><td align="center">
+    <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="width:560px;max-width:100%;">
+      <tr><td style="padding:6px 4px 18px;text-align:${align};" dir="${dir}">
+        <img src="${assets}/schowl-logo.png" alt="Schowl" width="176" height="48" style="width:176px;height:48px;border:0;">
+      </td></tr>
+      <tr><td style="background:${CARD};border:1px solid ${CARD_BORDER};border-radius:16px;padding:28px;" dir="${dir}">
+        ${chip}
+        ${hero}
+        ${heading}
+        ${paragraphs}
+        ${infoBox}
+        ${ctaBlock}
+      </td></tr>
+      <tr><td style="height:14px;line-height:14px;font-size:0;">&nbsp;</td></tr>
+      <tr><td style="background:${FOOTER_BG};border-radius:16px;padding:22px;text-align:center;" dir="${dir}">
+        <img src="${assets}/schowl-logo-white.png" alt="Schowl" width="132" height="36" style="width:132px;height:36px;border:0;margin-bottom:10px;">
+        <div style="color:${FOOTER_TEXT};font-size:12px;line-height:1.7;font-family:${BODY_FONT};">
+          ${footerLinks.join(' &nbsp;·&nbsp; ')}<br>
+          ${t("Online coding & design for kids 8–18.", "برمجة وتصميم أونلاين للأطفال 8–18.")}<br>
+          ${t("This is an automated message.", "هذه رسالة تلقائية.")}
+        </div>
+      </td></tr>
+    </table>
+  </td></tr>
 </table>
 </body>
 </html>`;
+
+  // Plain-text alternative.
+  const textParts = [
+    t(meta.chip.en, meta.chip.ar),
+    input.subject || "",
+    "",
+    ...input.body.split(/\n+/).map((l) => l.trim()).filter(Boolean),
+  ];
+  if (ctaUrls.length) {
+    textParts.push("");
+    textParts.push(...ctaUrls);
+  }
+  textParts.push("", "— Schowl · https://schowl.com");
+  if (input.unsubscribeUrl) textParts.push(`${t("Unsubscribe", "إلغاء الاشتراك")}: ${input.unsubscribeUrl}`);
+  const text = textParts.join("\n");
+
+  return { html, text };
 }

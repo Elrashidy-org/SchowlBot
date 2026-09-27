@@ -11,7 +11,7 @@ import {
   sendDirectMessage,
 } from "../bot/discordService.js";
 import { sendTemplatedEmail } from "./emailService.js";
-import { buildIcs, supportWhatsappLine } from "../utils/emailExtras.js";
+import { buildGoogleCalendarUrl, buildIcs, supportWhatsappLine } from "../utils/emailExtras.js";
 import { findCourseByNameOrId, courseLabel } from "./courseService.js";
 import { listAbandonedBookingSessions, markBookingSessionAlerted } from "./bookingSessionService.js";
 import {
@@ -188,16 +188,24 @@ async function runJob(job: { id: number; job_type: string; lead_id: string | nul
         job.payload?.context && typeof job.payload.context === "object"
           ? (job.payload.context as Record<string, string | number | null | undefined>)
           : {};
-      // Attach a calendar invite when the job carries .ics details (trial confirmation).
+      // Attach a calendar invite + Google Calendar link when the job carries .ics
+      // details (trial confirmation).
       let attachments: { filename: string; content: string }[] | undefined;
       const ics = job.payload?.ics as
         | { summary: string; startsAt: string; endsAt: string; url?: string }
         | undefined;
+      const emailContext = { ...context };
       if (ics?.startsAt && ics?.endsAt) {
         const text = buildIcs({ uid: `trial-${job.lesson_id ?? job.id}@schowl`, ...ics });
         attachments = [{ filename: "schowl-trial.ics", content: Buffer.from(text, "utf-8").toString("base64") }];
+        emailContext.calendar_url = buildGoogleCalendarUrl({
+          summary: ics.summary,
+          startsAt: ics.startsAt,
+          endsAt: ics.endsAt,
+          details: ics.url,
+        });
       }
-      await sendLeadEmail(lead as ClientLead, job.payload.template, context, attachments);
+      await sendLeadEmail(lead as ClientLead, job.payload.template, emailContext, attachments);
     }
 
     await supabase

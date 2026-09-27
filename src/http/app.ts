@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import cors from "cors";
 import express from "express";
 import rateLimit from "express-rate-limit";
@@ -32,8 +33,12 @@ export function createHttpApp() {
   const app = express();
 
   app.set("trust proxy", 1);
-  app.use(helmet());
+  app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
   app.use(express.json({ limit: "1mb" }));
+
+  // Brand images for emails (logos, owls), long-cached. Referenced by absolute URL.
+  const emailAssetsDir = fileURLToPath(new URL("../../assets/email", import.meta.url));
+  app.use("/static/email", express.static(emailAssetsDir, { maxAge: "30d", immutable: true }));
   // Allowlist entries match exactly, or as a wildcard where `*` stands for one
   // subdomain label — e.g. "https://*.vercel.app" allows the site's preview URLs.
   const originAllowed = (origin: string) =>

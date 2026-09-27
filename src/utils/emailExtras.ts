@@ -10,6 +10,18 @@ export function supportWhatsappLine(language?: string | null) {
     : `\n\nMessage us on WhatsApp: ${link}`;
 }
 
+// "Add to Google Calendar" link for the confirmation email's secondary button.
+export function buildGoogleCalendarUrl(input: { summary: string; startsAt: string; endsAt: string; details?: string }) {
+  const dt = (iso: string) => new Date(iso).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: input.summary,
+    dates: `${dt(input.startsAt)}/${dt(input.endsAt)}`,
+  });
+  if (input.details) params.set("details", input.details);
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
 // Minimal iCalendar VEVENT for a trial (times in UTC). Returns .ics text.
 export function buildIcs(input: {
   uid: string;
