@@ -60,6 +60,8 @@ export const config = {
   metaPixelId: optional("META_PIXEL_ID"),
   metaCapiToken: optional("META_CAPI_TOKEN"),
   metaApiVersion: optional("META_API_VERSION", "v19.0"),
+  // When set, CAPI events show under Events Manager → Test events. Unset in prod.
+  metaTestEventCode: optional("META_TEST_EVENT_CODE"),
 };
 
 export function isProduction() {

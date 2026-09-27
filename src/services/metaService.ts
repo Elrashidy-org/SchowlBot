@@ -27,8 +27,11 @@ export async function sendMetaEvent(input: {
   eventId?: string | null;
   email?: string | null;
   phone?: string | null;
-  firstName?: string | null;
+  // Parent's full name — split into fn (first word) and ln (the rest).
+  fullName?: string | null;
   country?: string | null;
+  // Stable per-family id (client_lead id for trials, camp_registration id for camps).
+  externalId?: string | null;
   fbp?: string | null;
   fbc?: string | null;
   clientIp?: string | null;
@@ -43,15 +46,23 @@ export async function sendMetaEvent(input: {
     console.warn(`Meta CAPI ${input.eventName} sent without event_id`);
   }
 
+  const nameParts = (input.fullName || "").trim().split(/\s+/).filter(Boolean);
+  const firstName = nameParts[0];
+  const lastName = nameParts.slice(1).join(" ");
+
   const userData: Record<string, unknown> = {};
   const em = sha256(input.email);
   const ph = hashPhone(input.phone);
-  const fn = sha256(input.firstName);
+  const fn = sha256(firstName);
+  const ln = lastName ? sha256(lastName) : undefined;
   const country = sha256(input.country);
+  const externalId = sha256(input.externalId);
   if (em) userData.em = [em];
   if (ph) userData.ph = [ph];
   if (fn) userData.fn = [fn];
+  if (ln) userData.ln = [ln];
   if (country) userData.country = [country];
+  if (externalId) userData.external_id = [externalId];
   if (input.fbp) userData.fbp = input.fbp;
   if (input.fbc) userData.fbc = input.fbc;
   if (input.clientIp) userData.client_ip_address = input.clientIp;
@@ -70,6 +81,7 @@ export async function sendMetaEvent(input: {
           input.value != null ? { value: input.value, currency: input.currency || "EGP" } : undefined,
       },
     ],
+    test_event_code: config.metaTestEventCode || undefined,
   };
 
   try {
