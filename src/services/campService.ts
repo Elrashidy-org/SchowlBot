@@ -46,6 +46,56 @@ export async function registerCamp(payload: CampRegisterPayload) {
   return data as CampRegistration;
 }
 
+export interface Camp {
+  id: string;
+  slug: string;
+  status: "open" | "upcoming" | "closed";
+  is_featured: boolean;
+  starts_on: string | null;
+  ends_on: string | null;
+  registration_deadline: string | null;
+  age_min: number | null;
+  age_max: number | null;
+  price: number | null;
+  currency: string;
+  seats_left: number | null;
+  title_en: string | null;
+  title_ar: string | null;
+  tagline_en: string | null;
+  tagline_ar: string | null;
+  description_en: string | null;
+  description_ar: string | null;
+  schedule_note_en: string | null;
+  schedule_note_ar: string | null;
+  tracks: unknown[];
+  outcomes: unknown[];
+  faq: unknown[];
+  image_url: string | null;
+  sort_order: number;
+}
+
+// Active/upcoming camps for the public site, sorted for display.
+export async function listPublicCamps() {
+  const { data, error } = await supabase
+    .from("camp")
+    .select("*")
+    .in("status", ["open", "upcoming"])
+    .order("sort_order", { ascending: true })
+    .order("starts_on", { ascending: true, nullsFirst: false });
+  if (error) throw error;
+  return (data as Camp[]) || [];
+}
+
+export async function getCampBySlug(slug: string) {
+  const { data, error } = await supabase
+    .from("camp")
+    .select("*")
+    .eq("slug", slug.trim())
+    .maybeSingle();
+  if (error) throw error;
+  return (data as Camp | null) ?? null;
+}
+
 export async function listCampRegistrations(camp?: string, limit = 25) {
   let query = supabase
     .from("camp_registration")

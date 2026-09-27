@@ -303,22 +303,23 @@ export async function notifyTrialBooked(input: {
   startsAt: string;
   teacherName?: string | null;
   meetingUrl?: string | null;
-  lessonId: number;
+  lessonId?: number | null;
+  needsTeacher?: boolean;
 }) {
   if (!client) return;
   const targets = await resolveChannels("trial_alerts");
   if (targets.length === 0) return;
   const embed = new EmbedBuilder()
-    .setTitle("New trial booked")
-    .setColor(0x00b5b5)
+    .setTitle(input.needsTeacher ? "New trial booked — needs a teacher" : "New trial booked")
+    .setColor(input.needsTeacher ? 0xf5a623 : 0x00b5b5)
     .addFields(
       { name: "Student", value: input.childName, inline: true },
       { name: "Course", value: input.courseLabel, inline: true },
-      { name: "Teacher", value: input.teacherName || "-", inline: true },
+      { name: "Teacher", value: input.needsTeacher ? "⚠️ unassigned" : input.teacherName || "-", inline: true },
       { name: "When", value: input.startsAt, inline: false },
       { name: "Meeting", value: input.meetingUrl || "link pending", inline: false },
     )
-    .setFooter({ text: `Lesson ID: ${input.lessonId}` });
+    .setFooter({ text: input.lessonId ? `Lesson ID: ${input.lessonId}` : "Lesson not created" });
   for (const target of targets) {
     try {
       const channel = await client.channels.fetch(target.channelId);

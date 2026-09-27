@@ -45,11 +45,17 @@ export const config = {
   emailCourseUrlTemplate: optional("EMAIL_COURSE_URL_TEMPLATE"),
   adminNotifyEmail: optional("ADMIN_NOTIFY_EMAIL"),
   leadSlaHours: Number(optional("LEAD_SLA_HOURS", "2")),
+  // Trial slots within this many minutes of now are hidden (booking lead time).
+  trialLeadMinutes: Number(optional("TRIAL_LEAD_MINUTES", "720")),
   autoAssignLeads: optional("AUTO_ASSIGN_LEADS", "true") !== "false",
   googleClientId: optional("GOOGLE_CLIENT_ID"),
   googleClientSecret: optional("GOOGLE_CLIENT_SECRET"),
   googleRefreshToken: optional("GOOGLE_REFRESH_TOKEN"),
   googleCalendarId: optional("GOOGLE_CALENDAR_ID", "primary"),
+  // Meta Conversions API (server-side Pixel events). No-op when unset.
+  metaPixelId: optional("META_PIXEL_ID"),
+  metaCapiToken: optional("META_CAPI_TOKEN"),
+  metaApiVersion: optional("META_API_VERSION", "v19.0"),
 };
 
 export function isProduction() {

@@ -33,6 +33,10 @@ export const leadPayloadSchema = z.object({
   utm_term: z.string().optional(),
   utm_content: z.string().optional(),
   referrer: z.string().optional(),
+  // Meta Pixel / Conversions API dedupe + cookies (optional).
+  event_id: z.string().optional(),
+  fbp: z.string().optional(),
+  fbc: z.string().optional(),
 });
 
 export type LeadPayload = z.infer<typeof leadPayloadSchema>;
@@ -62,6 +66,9 @@ export const campRegisterSchema = z.object({
   }),
   turnstile_token: z.string().optional(),
   source: z.string().optional().default("website"),
+  event_id: z.string().optional(),
+  fbp: z.string().optional(),
+  fbc: z.string().optional(),
 });
 export type CampRegisterPayload = z.infer<typeof campRegisterSchema>;
 

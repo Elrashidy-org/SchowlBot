@@ -8,6 +8,7 @@ import { assertSupabaseHealthy } from "../db/supabase.js";
 import {
   notifyCampRegistration,
   notifyLeadCreated,
+  notifySystemAlert,
   notifyTeacherTrialAssigned,
   notifyTrialBooked,
 } from "../bot/discordService.js";
@@ -21,9 +22,10 @@ import { listCourses, findCourseByNameOrId, courseLabel } from "../services/cour
 import { getAvailableSlots } from "../services/bookingService.js";
 import { listPackagePlans } from "../services/packagePlanService.js";
 import { scheduleTrial } from "../services/scheduleService.js";
-import { registerCamp } from "../services/campService.js";
+import { getCampBySlug, listPublicCamps, registerCamp } from "../services/campService.js";
 import { sendTemplatedEmail } from "../services/emailService.js";
 import { verifyTurnstile } from "../services/turnstileService.js";
+import { isMetaCapiConfigured, sendMetaEvent } from "../services/metaService.js";
 
 export function createHttpApp() {
   const app = express();
@@ -31,10 +33,24 @@ export function createHttpApp() {
   app.set("trust proxy", 1);
   app.use(helmet());
   app.use(express.json({ limit: "1mb" }));
+  // Allowlist entries match exactly, or as a wildcard where `*` stands for one
+  // subdomain label — e.g. "https://*.vercel.app" allows the site's preview URLs.
+  const originAllowed = (origin: string) =>
+    config.corsAllowedOrigins.some((entry) => {
+      if (entry === origin) return true;
+      if (!entry.includes("*")) return false;
+      const pattern = "^" + entry.replace(/[.]/g, "\\.").replace(/\*/g, "[^.]+") + "$";
+      try {
+        return new RegExp(pattern).test(origin);
+      } catch {
+        return false;
+      }
+    });
+
   app.use(
     cors({
       origin(origin, callback) {
-        if (!origin || config.corsAllowedOrigins.includes(origin)) {
+        if (!origin || originAllowed(origin)) {
           callback(null, true);
           return;
         }
@@ -60,6 +76,7 @@ export function createHttpApp() {
         resend_configured: Boolean(config.resendApiKey),
         turnstile_configured: Boolean(config.turnstileSecretKey),
         google_meet_configured: isMeetConfigured(),
+        meta_capi_configured: isMetaCapiConfigured(),
         cors_allowed_origins: config.corsAllowedOrigins,
       });
     } catch (error) {
@@ -106,12 +123,27 @@ export function createHttpApp() {
           const price = Number(p.list_price);
           return {
             id: p.id,
+            key: p.key,
+            class_type: p.class_type,
             name: p.name,
+            name_en: p.name_en,
+            name_ar: p.name_ar,
+            description: p.notes,
+            description_en: p.description_en,
+            description_ar: p.description_ar,
             lessons: p.lessons,
             price,
+            compare_at_price: p.compare_at_price != null ? Number(p.compare_at_price) : null,
             currency: p.currency,
             per_session_price: Math.round((price / p.lessons) * 100) / 100,
-            description: p.notes,
+            features_en: p.features_en ?? [],
+            features_ar: p.features_ar ?? [],
+            is_popular: p.is_popular,
+            is_best_value: p.is_best_value,
+            sort_order: p.sort_order,
+            course_id: p.course_id,
+            valid_days: p.valid_days,
+            session_minutes: p.session_minutes,
           };
         }),
       );
@@ -145,6 +177,7 @@ export function createHttpApp() {
         throw new ValidationError({ starts_at: "Invalid start time" });
       }
 
+      const startsAtIso = new Date(payload.starts_at).toISOString();
       const { lead } = await createLead(
         { ...payload, course_interest: course.name_en || payload.course },
         req.ip,
@@ -152,54 +185,113 @@ export function createHttpApp() {
       );
       await notifyLeadCreated(lead);
 
+      // Book the trial without gating on teacher availability — the team staffs a
+      // teacher afterwards. If the lesson can't be created, the lead is still saved.
+      let lesson: Awaited<ReturnType<typeof scheduleTrial>> | null = null;
       try {
-        const lesson = await scheduleTrial({
+        lesson = await scheduleTrial({
           leadId: lead.id,
           courseId: course.id,
-          startsAt: new Date(payload.starts_at).toISOString(),
+          startsAt: startsAtIso,
+          autoAssign: false,
+          allowUnassigned: true,
         });
-        await notifyTeacherTrialAssigned({
-          teacherId: lesson.teacher_id,
-          courseLabel: courseLabel(course),
-          startsAt: lesson.scheduled_at,
-          meetingUrl: lesson.meeting_url,
-          leadId: lesson.lead_id,
-          lessonId: lesson.id,
-        });
+      } catch (error) {
+        console.error("scheduleTrial failed for a public booking", error);
+      }
+
+      // Notifications are best-effort — they must never fail the booking.
+      try {
+        if (lesson?.teacher_id) {
+          await notifyTeacherTrialAssigned({
+            teacherId: lesson.teacher_id,
+            courseLabel: courseLabel(course),
+            startsAt: lesson.scheduled_at,
+            meetingUrl: lesson.meeting_url,
+            leadId: lesson.lead_id,
+            lessonId: lesson.id,
+          });
+        }
         await notifyTrialBooked({
           childName: lead.child_name,
           courseLabel: courseLabel(course),
-          startsAt: lesson.scheduled_at,
-          meetingUrl: lesson.meeting_url,
-          lessonId: lesson.id,
+          startsAt: lesson?.scheduled_at ?? startsAtIso,
+          meetingUrl: lesson?.meeting_url ?? null,
+          lessonId: lesson?.id ?? null,
+          needsTeacher: !lesson?.teacher_id,
         });
-        res.status(201).json({
-          status: "booked",
-          lead_id: lead.id,
-          lesson_id: lesson.id,
-          scheduled_at: lesson.scheduled_at,
-          meeting_url: lesson.meeting_url,
-        });
-      } catch {
-        // That slot just filled (or no teacher free): the lead is saved for follow-up.
-        res.status(409).json({
-          status: "lead_saved",
-          lead_id: lead.id,
-          message: "That time just filled up — our team will contact you to confirm a slot.",
-        });
+        if (!lesson?.teacher_id) {
+          await notifySystemAlert(
+            `Trial needs a teacher: ${lead.child_name} — ${courseLabel(course)} @ ${startsAtIso}${lesson ? ` (lesson ${lesson.id})` : ""}. Assign with /trial reschedule.`,
+          );
+        }
+      } catch (error) {
+        console.error("Trial notifications failed", error);
       }
+
+      const trialSource = payload.landing_page || req.get("referer") || undefined;
+      const trackBase = {
+        eventId: payload.event_id,
+        email: lead.email,
+        phone: lead.phone_e164,
+        firstName: lead.parent_name,
+        country: lead.country_iso,
+        fbp: payload.fbp,
+        fbc: payload.fbc,
+        clientIp: req.ip,
+        userAgent: req.get("user-agent"),
+        sourceUrl: trialSource,
+      };
+      void sendMetaEvent({ eventName: "Lead", ...trackBase });
+      void sendMetaEvent({ eventName: "Schedule", ...trackBase });
+
+      res.status(201).json({
+        status: "booked",
+        lead_id: lead.id,
+        lesson_id: lesson?.id ?? null,
+        scheduled_at: lesson?.scheduled_at ?? startsAtIso,
+        meeting_url: lesson?.meeting_url ?? null,
+      });
     } catch (error) {
       next(error);
     }
   });
 
-  // ---- Camp registration (separate intake) ----
+  // ---- Camps (public catalog + registration) ----
+
+  app.get("/camps", async (_req, res, next) => {
+    try {
+      res.json(await listPublicCamps());
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/camps/:slug", async (req, res, next) => {
+    try {
+      const camp = await getCampBySlug(String(req.params.slug));
+      if (!camp) {
+        res.status(404).json({ message: "Camp not found" });
+        return;
+      }
+      res.json(camp);
+    } catch (error) {
+      next(error);
+    }
+  });
 
   app.post("/camp/register", leadLimiter, async (req, res, next) => {
     try {
       const payload = campRegisterSchema.parse(req.body);
       await verifyTurnstile(payload.turnstile_token, req.ip);
-      const reg = await registerCamp(payload);
+      const camp = await getCampBySlug(payload.camp || "summer");
+      if (!camp) {
+        throw new ValidationError({ camp: "Unknown camp." });
+      }
+      if (camp.status === "closed") {
+        throw new ValidationError({ camp: "Registration for this camp is closed." });
+      }
+      const reg = await registerCamp({ ...payload, camp: camp.slug });
 
       if (reg.email) {
         await sendTemplatedEmail({
@@ -217,6 +309,20 @@ export function createHttpApp() {
         email: reg.email,
         phone: reg.phone_e164,
       });
+      void sendMetaEvent({
+        eventName: "CompleteRegistration",
+        eventId: payload.event_id,
+        email: reg.email,
+        phone: reg.phone_e164,
+        firstName: reg.parent_name,
+        country: reg.country_iso,
+        fbp: payload.fbp,
+        fbc: payload.fbc,
+        clientIp: req.ip,
+        userAgent: req.get("user-agent"),
+        sourceUrl: req.get("referer") || undefined,
+      });
+
       res.status(201).json({ status: "registered", id: reg.id });
     } catch (error) {
       next(error);
@@ -229,6 +335,20 @@ export function createHttpApp() {
       if (!result.duplicate) {
         await notifyLeadCreated(result.lead);
       }
+      const t = (req.body ?? {}) as { event_id?: string; fbp?: string; fbc?: string; landing_page?: string };
+      void sendMetaEvent({
+        eventName: "Lead",
+        eventId: t.event_id,
+        email: result.lead.email,
+        phone: result.lead.phone_e164,
+        firstName: result.lead.parent_name,
+        country: result.lead.country_iso,
+        fbp: t.fbp,
+        fbc: t.fbc,
+        clientIp: req.ip,
+        userAgent: req.get("user-agent"),
+        sourceUrl: t.landing_page || req.get("referer") || undefined,
+      });
       res.status(201).json({
         lead_id: result.lead.id,
         status: "received",

@@ -14,7 +14,25 @@ export interface PackagePlan {
   currency: string;
   active: boolean;
   notes: string | null;
+  key: string | null;
+  class_type: "one_on_one" | "group";
+  name_en: string | null;
+  name_ar: string | null;
+  description_en: string | null;
+  description_ar: string | null;
+  features_en: string[];
+  features_ar: string[];
+  is_popular: boolean;
+  is_best_value: boolean;
+  sort_order: number;
+  compare_at_price: number | null;
+  course_id: string | null;
+  valid_days: number | null;
+  session_minutes: number;
 }
+
+const PLAN_COLUMNS =
+  "id, name, lessons, list_price, currency, active, notes, key, class_type, name_en, name_ar, description_en, description_ar, features_en, features_ar, is_popular, is_best_value, sort_order, compare_at_price, course_id, valid_days, session_minutes";
 
 export async function createPackagePlan(input: {
   name: string;
@@ -41,7 +59,8 @@ export async function createPackagePlan(input: {
 export async function listPackagePlans(activeOnly = true) {
   let query = supabase
     .from("package_plan")
-    .select("id, name, lessons, list_price, currency, active, notes")
+    .select(PLAN_COLUMNS)
+    .order("sort_order", { ascending: true })
     .order("lessons", { ascending: true });
   if (activeOnly) query = query.eq("active", true);
   const { data, error } = await query;
@@ -54,7 +73,7 @@ export async function findPackagePlan(value: string) {
   const raw = value.trim();
   const { data, error } = await supabase
     .from("package_plan")
-    .select("id, name, lessons, list_price, currency, active, notes")
+    .select(PLAN_COLUMNS)
     .or(UUID_RE.test(raw) ? `id.eq.${raw}` : `name.ilike.%${sanitizeSearchTerm(raw)}%`)
     .order("active", { ascending: false })
     .limit(1)

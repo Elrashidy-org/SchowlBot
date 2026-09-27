@@ -57,11 +57,13 @@ async function enqueueTrialJobs(input: {
   leadId: string;
   childName: string;
   lessonId: number;
-  teacherId: string;
+  teacherId: string | null;
   startsAt: string;
   meetingUrl?: string | null;
 }) {
-  const teacher = await getTeacherContact(input.teacherId);
+  const teacher = input.teacherId
+    ? await getTeacherContact(input.teacherId)
+    : { name: null as string | null, email: null as string | null, discordUserId: null as string | null };
   const context = {
     scheduled_at: formatScheduledAt(input.startsAt),
     teacher_name: teacher.name ?? "your Schowl teacher",
@@ -132,26 +134,42 @@ export async function scheduleTrial(input: {
   startsAt: string;
   durationMinutes?: number;
   teacherId?: string | null;
+  // Default true: pick a free teacher when none is given. Public bookings pass
+  // false so a trial is never gated on teacher availability.
+  autoAssign?: boolean;
+  // Default false: throw if no teacher. Public bookings pass true so the trial
+  // is created unassigned (status "pending_assignment") for the team to staff.
+  allowUnassigned?: boolean;
   meetingUrl?: string | null;
   assignedByBotUserId?: string | null;
 }) {
   const duration = input.durationMinutes || 60;
-  const teacherId =
-    input.teacherId || (await pickTrialTeacher(input.courseId, input.startsAt, duration));
-  if (!teacherId) {
+  let teacherId = input.teacherId ?? null;
+  if (!teacherId && input.autoAssign !== false) {
+    teacherId = await pickTrialTeacher(input.courseId, input.startsAt, duration);
+  }
+  if (!teacherId && !input.allowUnassigned) {
     throw new Error("No available teacher found for this course and time");
   }
 
   const lead = await getLead(input.leadId);
   const clientId = await getOrCreateClientIdForLead(lead);
   const endsAt = new Date(new Date(input.startsAt).getTime() + duration * 60_000).toISOString();
-  const trialTeacher = await getTeacherContact(teacherId);
-  const meetingUrl = await resolveMeetingUrl(input.meetingUrl, {
-    summary: `Schowl trial — ${lead.child_name}`,
-    startsAt: input.startsAt,
-    endsAt,
-    attendees: [lead.email, trialTeacher.email],
-  });
+  const trialTeacher = teacherId ? await getTeacherContact(teacherId) : null;
+
+  // A Meet/Calendar failure must never fail the booking — fall back to no link.
+  let meetingUrl: string | null = input.meetingUrl ?? null;
+  try {
+    meetingUrl = await resolveMeetingUrl(input.meetingUrl, {
+      summary: `Schowl trial — ${lead.child_name}`,
+      startsAt: input.startsAt,
+      endsAt,
+      attendees: [lead.email, trialTeacher?.email].filter((e): e is string => Boolean(e)),
+    });
+  } catch (error) {
+    console.error("Meet creation failed; booking the trial without a link", error);
+    meetingUrl = input.meetingUrl ?? null;
+  }
 
   const { data, error } = await supabase
     .from("lesson")
@@ -164,10 +182,10 @@ export async function scheduleTrial(input: {
       ends_at: endsAt,
       duration_minutes: duration,
       lesson_type: "trial",
-      status: "scheduled",
+      status: teacherId ? "scheduled" : "pending_assignment",
       lesson: 0,
       meeting_url: meetingUrl,
-      assigned_at: new Date().toISOString(),
+      assigned_at: teacherId ? new Date().toISOString() : null,
       assigned_by_bot_user_id: input.assignedByBotUserId || null,
     })
     .select("*")
