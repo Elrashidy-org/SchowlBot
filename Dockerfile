@@ -15,6 +15,8 @@ ENV NODE_ENV=production
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
+# Email images served at /static/email (dist/http/app.js reads ../../assets/email).
+COPY assets ./assets
 # The app reads PORT from the environment (hosts inject it); 3001 is the local default.
 EXPOSE 3001
 CMD ["node", "dist/index.js"]
