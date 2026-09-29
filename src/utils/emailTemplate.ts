@@ -17,8 +17,13 @@ const CHIP_TEXT = "#0b6b52";
 const CHIP_BORDER = "#4df2c4";
 const FOOTER_BG = "#0b1030";
 const FOOTER_TEXT = "#c7d0f0";
+// Same type system as schowl.com: Cairo for body text; display type (titles,
+// chips, buttons) is Press Start 2P in English and Changa in Arabic. Clients
+// that block web fonts (e.g. Gmail) fall back to the system fonts listed.
 const BODY_FONT = "'Cairo',Tahoma,Arial,sans-serif";
 const TITLE_FONT_EN = "'Press Start 2P','Arial Black',Arial,sans-serif";
+const TITLE_FONT_AR = "'Changa','Cairo',Tahoma,Arial,sans-serif";
+const displayFont = (rtl?: boolean) => (rtl ? TITLE_FONT_AR : TITLE_FONT_EN);
 
 type Hero = "jump" | "owl" | null;
 type Cta = "trial" | "join" | "none";
@@ -89,7 +94,7 @@ function button(label: string, url: string, opts: { primary?: boolean; rtl?: boo
   const color = primary ? BTN_TEXT : TITLE;
   const border = primary ? `border-bottom:4px solid ${BTN_BORDER};` : `border:1px solid ${CARD_BORDER};`;
   return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto 12px;"><tr><td style="border-radius:10px;background:${bg};${border}">
-    <a href="${url}" style="display:inline-block;padding:14px 22px;color:${color};font-size:14px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;text-decoration:none;font-family:${BODY_FONT};">${escapeHtml(
+    <a href="${url}" style="display:inline-block;padding:14px 22px;color:${color};font-size:${opts.rtl ? "17px" : "11px"};line-height:1.6;font-weight:700;letter-spacing:${opts.rtl ? "0" : "0.04em"};text-transform:${opts.rtl ? "none" : "uppercase"};text-decoration:none;font-family:${displayFont(opts.rtl)};">${escapeHtml(
     label,
   )}</a>
   </td></tr></table>`;
@@ -130,7 +135,7 @@ export function renderBrandedEmail(input: {
     .join("");
 
   // Chip.
-  const chip = `<div style="text-align:${align};margin:0 0 12px;"><span style="display:inline-block;background:${CHIP_BG};color:${CHIP_TEXT};border:1px solid ${CHIP_BORDER};border-radius:999px;padding:5px 12px;font-size:11px;font-weight:700;letter-spacing:0.06em;font-family:${BODY_FONT};">${escapeHtml(
+  const chip = `<div style="text-align:${align};margin:0 0 12px;"><span style="display:inline-block;background:${CHIP_BG};color:${CHIP_TEXT};border:1px solid ${CHIP_BORDER};border-radius:999px;padding:5px 12px;font-size:${rtl ? "14px" : "9px"};line-height:1.6;font-weight:700;letter-spacing:${rtl ? "0" : "0.06em"};font-family:${displayFont(rtl)};">${escapeHtml(
     t(meta.chip.en, meta.chip.ar),
   )}</span></div>`;
 
@@ -140,9 +145,9 @@ export function renderBrandedEmail(input: {
     ? `<div style="text-align:center;margin:4px 0 14px;"><img src="${assets}/${heroSrc}" alt="Schowl owl" width="104" height="104" style="width:104px;height:104px;border:0;image-rendering:pixelated;"></div>`
     : "";
 
-  // Title (arcade for EN, bold Cairo for AR).
-  const titleFont = rtl ? BODY_FONT : TITLE_FONT_EN;
-  const titleSize = rtl ? "20px" : "17px";
+  // Title: pixel type for EN, Changa for AR (as on the website).
+  const titleFont = displayFont(rtl);
+  const titleSize = rtl ? "24px" : "17px";
   const heading = input.subject
     ? `<h1 style="margin:0 0 18px;color:${TITLE};font-family:${titleFont};font-size:${titleSize};line-height:1.5;font-weight:700;letter-spacing:0.04em;text-align:${align};text-shadow:0 2px 0 ${TITLE_SHADOW};text-transform:${
         rtl ? "none" : "uppercase"
@@ -218,7 +223,7 @@ export function renderBrandedEmail(input: {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Press+Start+2P&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Changa:wght@500;700&family=Press+Start+2P&display=swap" rel="stylesheet">
 </head>
 <body style="margin:0;padding:0;background:${PAGE_BG};font-family:${BODY_FONT};">
 <span style="display:none;max-height:0;overflow:hidden;opacity:0;">${preheader}</span>
@@ -226,7 +231,7 @@ export function renderBrandedEmail(input: {
   <tr><td align="center">
     <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="width:560px;max-width:100%;">
       <tr><td style="padding:6px 4px 18px;text-align:${align};" dir="${dir}">
-        <img src="${assets}/schowl-logo.png" alt="Schowl" width="176" height="48" style="width:176px;height:48px;border:0;">
+        <img src="${assets}/schowl-logo.png" alt="Schowl" width="176" height="33" style="width:176px;height:33px;border:0;">
       </td></tr>
       <tr><td style="background:${CARD};border:1px solid ${CARD_BORDER};border-radius:16px;padding:28px;" dir="${dir}">
         ${chip}
@@ -238,10 +243,10 @@ export function renderBrandedEmail(input: {
       </td></tr>
       <tr><td style="height:14px;line-height:14px;font-size:0;">&nbsp;</td></tr>
       <tr><td style="background:${FOOTER_BG};border-radius:16px;padding:22px;text-align:center;" dir="${dir}">
-        <img src="${assets}/schowl-logo-white.png" alt="Schowl" width="132" height="36" style="width:132px;height:36px;border:0;margin-bottom:10px;">
+        <img src="${assets}/schowl-logo-white.png" alt="Schowl" width="132" height="24" style="width:132px;height:24px;border:0;margin-bottom:12px;">
         <div style="color:${FOOTER_TEXT};font-size:12px;line-height:1.7;font-family:${BODY_FONT};">
           ${footerLinks.join(' &nbsp;·&nbsp; ')}<br>
-          ${t("Online coding & design for kids 8–18.", "برمجة وتصميم أونلاين للأطفال 8–18.")}<br>
+          ${t("Online coding & design for kids 8–18.", "برمجة وتصميم أونلاين للأطفال من 8 إلى 18 سنة.")}<br>
           ${t("This is an automated message.", "هذه رسالة تلقائية.")}
         </div>
       </td></tr>
