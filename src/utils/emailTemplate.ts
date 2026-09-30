@@ -25,6 +25,11 @@ const TITLE_FONT_EN = "'Press Start 2P','Arial Black',Arial,sans-serif";
 const TITLE_FONT_AR = "'Changa','Cairo',Tahoma,Arial,sans-serif";
 const displayFont = (rtl?: boolean) => (rtl ? TITLE_FONT_AR : TITLE_FONT_EN);
 
+// Email images are cached for 30 days as "immutable" (by Cloudflare, Gmail's
+// image proxy and mail apps), so a changed image must get a new URL: bump this
+// whenever anything in assets/email/ changes.
+const ASSET_VERSION = "2";
+
 type Hero = "jump" | "owl" | null;
 type Cta = "trial" | "join" | "none";
 interface EmailMeta {
@@ -142,7 +147,7 @@ export function renderBrandedEmail(input: {
   // Hero owl.
   const heroSrc = meta.hero === "jump" ? "owl-jump.png" : meta.hero === "owl" ? "owl.png" : null;
   const hero = heroSrc
-    ? `<div style="text-align:center;margin:4px 0 14px;"><img src="${assets}/${heroSrc}" alt="Schowl owl" width="104" height="104" style="width:104px;height:104px;border:0;image-rendering:pixelated;"></div>`
+    ? `<div style="text-align:center;margin:4px 0 14px;"><img src="${assets}/${heroSrc}?v=${ASSET_VERSION}" alt="Schowl owl" width="104" height="104" style="width:104px;height:104px;border:0;image-rendering:pixelated;"></div>`
     : "";
 
   // Title: pixel type for EN, Changa for AR (as on the website).
@@ -231,7 +236,7 @@ export function renderBrandedEmail(input: {
   <tr><td align="center">
     <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="width:560px;max-width:100%;">
       <tr><td style="padding:6px 4px 18px;text-align:${align};" dir="${dir}">
-        <img src="${assets}/schowl-logo.png" alt="Schowl" width="176" height="33" style="width:176px;height:33px;border:0;">
+        <img src="${assets}/schowl-logo.png?v=${ASSET_VERSION}" alt="Schowl" width="176" height="33" style="width:176px;height:33px;border:0;">
       </td></tr>
       <tr><td style="background:${CARD};border:1px solid ${CARD_BORDER};border-radius:16px;padding:28px;" dir="${dir}">
         ${chip}
@@ -243,7 +248,7 @@ export function renderBrandedEmail(input: {
       </td></tr>
       <tr><td style="height:14px;line-height:14px;font-size:0;">&nbsp;</td></tr>
       <tr><td style="background:${FOOTER_BG};border-radius:16px;padding:22px;text-align:center;" dir="${dir}">
-        <img src="${assets}/schowl-logo-white.png" alt="Schowl" width="132" height="24" style="width:132px;height:24px;border:0;margin-bottom:12px;">
+        <img src="${assets}/schowl-logo-white.png?v=${ASSET_VERSION}" alt="Schowl" width="132" height="24" style="width:132px;height:24px;border:0;margin-bottom:12px;">
         <div style="color:${FOOTER_TEXT};font-size:12px;line-height:1.7;font-family:${BODY_FONT};">
           ${footerLinks.join(' &nbsp;·&nbsp; ')}<br>
           ${t("Online coding & design for kids 8–18.", "برمجة وتصميم أونلاين للأطفال من 8 إلى 18 سنة.")}<br>
